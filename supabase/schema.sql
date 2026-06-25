@@ -1,0 +1,232 @@
+-- ════════════════════════════════════════════════════════════════════
+--  ScopeFinance — schema Postgres (Supabase)
+--  Rode no SQL Editor do Supabase (cole tudo e execute) OU via CLI.
+--  É idempotente: pode rodar de novo sem quebrar.
+-- ════════════════════════════════════════════════════════════════════
+
+create extension if not exists "pgcrypto";
+
+-- ─── util: atualiza updated_at ──────────────────────────────────────
+create or replace function set_updated_at() returns trigger as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$ language plpgsql;
+
+-- ════════════════════════ CLIENTES ════════════════════════
+create table if not exists clientes (
+  id uuid primary key default gen_random_uuid(),
+  nome text not null,
+  tipo text not null default 'Pessoa Física',          -- Pessoa Física | Pessoa Jurídica
+  doc text,                                             -- CPF / CNPJ
+  email text,
+  tel text,
+  status text not null default 'Ativo',                 -- Ativo | Inativo | Prospect
+  endereco text,
+  obs text,
+  asaas_customer_id text,                               -- vínculo futuro com Asaas
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- ════════════════════════ BANCOS ════════════════════════
+create table if not exists bancos (
+  id uuid primary key default gen_random_uuid(),
+  nome text not null,
+  banco text,
+  tipo text not null default 'Conta corrente',          -- Conta corrente | poupança | digital
+  saldo numeric(14,2) not null default 0,               -- ajustado automaticamente por lançamentos
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- ════════════════════════ CARTÕES ════════════════════════
+create table if not exists cartoes (
+  id uuid primary key default gen_random_uuid(),
+  nome text not null,
+  bandeira text default 'Visa',
+  limite numeric(14,2) not null default 0,
+  usado numeric(14,2) not null default 0,
+  fechamento int,                                        -- dia do fechamento
+  vencimento int,                                        -- dia do vencimento
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- ════════════════════════ CONTRATOS ════════════════════════
+create table if not exists contratos (
+  id uuid primary key default gen_random_uuid(),
+  cliente_id uuid references clientes(id) on delete set null,
+  servico text not null,
+  valor numeric(14,2) not null default 0,
+  freq text not null default 'Único',                    -- Único | Mensal | Trimestral | Anual
+  categoria text default 'WebDesign',                    -- WebDesign | Automação | IA | CRM | Consultoria | Outro
+  inicio date,
+  fim date,
+  status text not null default 'Ativo',                  -- Ativo | Pausado | Encerrado | Em negociação
+  obs text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- ════════════════════════ ASSINATURAS ════════════════════════
+-- direcao = 'receber'  -> cliente assina o CRM/serviço da Scope  -> gera CONTAS A RECEBER
+-- direcao = 'pagar'    -> a Scope assina uma ferramenta/serviço  -> gera CONTAS A PAGAR
+create table if not exists assinaturas (
+  id uuid primary key default gen_random_uuid(),
+  direcao text not null default 'receber',               -- receber | pagar
+  cliente_id uuid references clientes(id) on delete set null,   -- quando receber
+  fornecedor text,                                       -- quando pagar
+  descricao text,
+  plano text,                                            -- Starter | Pro | Business | Enterprise (CRM)
+  categoria text,                                        -- p/ pagar: Software/SaaS, Infraestrutura...
+  valor numeric(14,2) not null default 0,
+  ciclo text not null default 'mensal',                  -- mensal | trimestral | anual
+  dia_venc int,                                          -- dia do mês (1-31)
+  inicio date not null default current_date,
+  proximo_venc date,                                     -- próxima data a gerar cobrança/conta
+  fim date,                                              -- término (null = sem fim)
+  conta_id uuid references bancos(id) on delete set null,
+  status text not null default 'Ativa',                  -- Ativa | Suspensa | Cancelada
+  asaas_subscription_id text,                            -- vínculo futuro com Asaas
+  obs text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- ════════════════════════ CONTAS A RECEBER ════════════════════════
+create table if not exists contas_receber (
+  id uuid primary key default gen_random_uuid(),
+  cliente_id uuid references clientes(id) on delete set null,
+  contrato_id uuid references contratos(id) on delete set null,
+  assinatura_id uuid references assinaturas(id) on delete set null,
+  descricao text not null,
+  valor numeric(14,2) not null default 0,
+  vencimento date,
+  status text not null default 'Pendente',               -- Pendente | Pago | Vencido | Cancelado
+  forma_pagamento text default 'PIX',
+  pago_em date,
+  conta_id uuid references bancos(id) on delete set null,
+  competencia date,                                      -- mês de referência (recorrência)
+  asaas_payment_id text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (assinatura_id, competencia)                    -- não duplica a cobrança do mesmo ciclo
+);
+
+-- ════════════════════════ CONTAS A PAGAR ════════════════════════
+create table if not exists contas_pagar (
+  id uuid primary key default gen_random_uuid(),
+  fornecedor text not null,
+  assinatura_id uuid references assinaturas(id) on delete set null,
+  descricao text not null,
+  valor numeric(14,2) not null default 0,
+  vencimento date,
+  categoria text default 'Infraestrutura',
+  status text not null default 'Pendente',
+  pago_em date,
+  conta_id uuid references bancos(id) on delete set null,
+  competencia date,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (assinatura_id, competencia)
+);
+
+-- ════════════════════════ LANÇAMENTOS ════════════════════════
+create table if not exists lancamentos (
+  id uuid primary key default gen_random_uuid(),
+  tipo text not null,                                    -- entrada | saida
+  descricao text not null,
+  valor numeric(14,2) not null default 0,
+  data date not null default current_date,
+  categoria text,
+  conta_id uuid references bancos(id) on delete set null,
+  origem text default 'manual',                          -- manual | receber | pagar
+  origem_id uuid,
+  created_at timestamptz not null default now()
+);
+
+-- ════════════════════════ NOTAS FISCAIS (NFS-e via Asaas) ════════════════════════
+create table if not exists notas_fiscais (
+  id uuid primary key default gen_random_uuid(),
+  cliente_id uuid references clientes(id) on delete set null,
+  conta_receber_id uuid references contas_receber(id) on delete set null,
+  descricao_servico text,
+  valor numeric(14,2) not null default 0,
+  status text not null default 'Pendente',               -- Pendente | Agendada | Emitida | Cancelada | Erro
+  asaas_invoice_id text,
+  numero text,
+  data_emissao date,
+  pdf_url text,
+  xml_url text,
+  payload jsonb,
+  erro text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- ─── índices úteis ──────────────────────────────────────────────────
+create index if not exists idx_receber_status on contas_receber(status);
+create index if not exists idx_receber_venc on contas_receber(vencimento);
+create index if not exists idx_pagar_status on contas_pagar(status);
+create index if not exists idx_pagar_venc on contas_pagar(vencimento);
+create index if not exists idx_assin_status on assinaturas(status);
+create index if not exists idx_assin_prox on assinaturas(proximo_venc);
+create index if not exists idx_lanc_data on lancamentos(data);
+
+-- ════════════════════════ TRIGGERS ════════════════════════
+
+-- updated_at automático
+do $$
+declare t text;
+begin
+  foreach t in array array['clientes','bancos','cartoes','contratos','assinaturas','contas_receber','contas_pagar','notas_fiscais']
+  loop
+    execute format('drop trigger if exists trg_updated_%1$s on %1$s', t);
+    execute format('create trigger trg_updated_%1$s before update on %1$s for each row execute function set_updated_at()', t);
+  end loop;
+end $$;
+
+-- Ajuste automático do saldo do banco a cada lançamento (append-only: insert/delete)
+create or replace function apply_lancamento_saldo() returns trigger as $$
+begin
+  if (tg_op = 'INSERT') then
+    if new.conta_id is not null then
+      update bancos
+        set saldo = saldo + (case when new.tipo = 'entrada' then new.valor else -new.valor end),
+            updated_at = now()
+        where id = new.conta_id;
+    end if;
+    return new;
+  elsif (tg_op = 'DELETE') then
+    if old.conta_id is not null then
+      update bancos
+        set saldo = saldo - (case when old.tipo = 'entrada' then old.valor else -old.valor end),
+            updated_at = now()
+        where id = old.conta_id;
+    end if;
+    return old;
+  end if;
+  return null;
+end;
+$$ language plpgsql;
+
+drop trigger if exists trg_lancamento_saldo on lancamentos;
+create trigger trg_lancamento_saldo
+  after insert or delete on lancamentos
+  for each row execute function apply_lancamento_saldo();
+
+-- ════════════════════════ RLS (Row Level Security) ════════════════════════
+-- O back-end acessa via service_role (bypassa RLS). As policies abaixo
+-- garantem que somente usuários autenticados leiam/escrevam se a anon key for usada.
+do $$
+declare t text;
+begin
+  foreach t in array array['clientes','bancos','cartoes','contratos','assinaturas','contas_receber','contas_pagar','lancamentos','notas_fiscais']
+  loop
+    execute format('alter table %I enable row level security', t);
+    execute format('drop policy if exists "auth_all" on %I', t);
+    execute format('create policy "auth_all" on %I for all to authenticated using (true) with check (true)', t);
+  end loop;
+end $$;
