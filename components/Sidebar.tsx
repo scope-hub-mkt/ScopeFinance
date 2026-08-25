@@ -40,6 +40,10 @@ const NAV: { g: string; items: { href: string; icon: string; l: string }[] }[] =
     g: "Fiscal",
     items: [{ href: "/notas-fiscais", icon: "ti-receipt", l: "Notas fiscais" }],
   },
+  {
+    g: "Sistema",
+    items: [{ href: "/integracao", icon: "ti-plug-connected", l: "Integração" }],
+  },
 ];
 
 export function Sidebar({ userEmail }: { userEmail?: string | null }) {

@@ -23,6 +23,9 @@ interface ResourceConfig {
 
 export const RESOURCES: Record<ResourceName, ResourceConfig> = {
   clientes: {
+    // ⛔ `origem` e `sincronizado_em` ficam de fora: quem os grava é a
+    // replicação com a Dashboard. Um formulário capaz de escrever "origem:
+    // dashboard" apagaria a única marca de procedência que o cadastro tem.
     columns: ["nome", "tipo", "doc", "email", "tel", "status", "endereco", "obs", "asaas_customer_id"],
     orderBy: "nome",
     ascending: true,
@@ -62,16 +65,23 @@ export const RESOURCES: Record<ResourceName, ResourceConfig> = {
     integer: ["dia_venc"],
   },
   contas_receber: {
+    // `valor_pago` e `deducoes` sustentam a base LÍQUIDA da comissão da
+    // Dashboard (`RN-04`). São graváveis pela tela porque é lá que o dado
+    // nasce — na baixa, quem confere o extrato.
     columns: [
       "cliente_id", "contrato_id", "assinatura_id", "descricao", "valor",
       "vencimento", "status", "forma_pagamento", "pago_em", "conta_id", "competencia", "asaas_payment_id",
+      "valor_pago", "deducoes",
     ],
     orderBy: "vencimento",
     ascending: true,
-    numeric: ["valor"],
+    numeric: ["valor", "valor_pago", "deducoes"],
     integer: [],
   },
   contas_pagar: {
+    // ⛔ `referencia_externa` NÃO entra aqui de propósito: é a chave de
+    // idempotência que a Dashboard manda em `/api/integracao/contas-pagar`.
+    // Editável pela tela, ela deixaria de garantir o que promete garantir.
     columns: [
       "fornecedor", "assinatura_id", "descricao", "valor", "vencimento",
       "categoria", "status", "pago_em", "conta_id", "competencia",

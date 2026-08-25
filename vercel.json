@@ -4,6 +4,10 @@
     {
       "path": "/api/cron/recorrencia",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/integracao",
+      "schedule": "15 6 * * *"
     }
   ]
 }

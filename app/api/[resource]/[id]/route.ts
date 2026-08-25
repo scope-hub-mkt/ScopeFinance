@@ -1,8 +1,9 @@
-import { NextRequest } from "next/server";
+import { NextRequest, after } from "next/server";
 import { requireUser } from "@/lib/supabase/auth";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { isResource, sanitizeInput } from "@/lib/resources";
 import { ok, fail, handleError } from "@/lib/api";
+import { enfileirarEvento, entregarFila } from "@/lib/integracao/sincronia";
 
 export const dynamic = "force-dynamic";
 
@@ -24,14 +25,50 @@ export async function PATCH(
       .eq("id", id)
       .select()
       .single();
-    if (error) return fail(error.message, 500);
+    if (error) {
+      if (error.code === "23505" && resource === "clientes") {
+        return fail(
+          "Já existe um cliente com este CPF/CNPJ. O documento é único (comparado só pelos dígitos).",
+          409
+        );
+      }
+      return fail(error.message, 500);
+    }
+
+    // A edição também replica: os dois sistemas compartilham o cadastro, e
+    // um nome corrigido aqui que não chega lá recria a divergência que a
+    // replicação existe para fechar.
+    if (resource === "clientes") {
+      await enfileirarEvento(supabase, "cliente.atualizado", {
+        cliente_id: data.id,
+        nome: data.nome,
+        doc: data.doc,
+        email: data.email,
+        tel: data.tel,
+        status: data.status,
+        fonte: "scopefinance",
+      });
+      after(() => entregarFila(supabase, 10));
+    }
+
     return ok(data);
   } catch (e) {
     return handleError(e);
   }
 }
 
-// DELETE /api/<recurso>/<id> — remove
+/**
+ * DELETE /api/<recurso>/<id> — remove.
+ *
+ * ⛔ **Exclusão de cliente NÃO replica para a Dashboard, de propósito.** Lá o
+ * cliente pode ter venda, comissão e serviço pendurados; propagar o DELETE
+ * transformaria uma limpeza de cadastro daqui em perda de histórico
+ * comercial. A divergência que isso cria — cliente que existe lá e não aqui —
+ * é fechada pela reconciliação, que **recria** o cadastro na próxima passada.
+ *
+ * Se a intenção for encerrar de verdade, o caminho é `status = "Inativo"`, que
+ * replica normalmente pelo `cliente.atualizado`.
+ */
 export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ resource: string; id: string }> }

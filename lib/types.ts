@@ -11,6 +11,9 @@ export interface Cliente {
   endereco: string | null;
   obs: string | null;
   asaas_customer_id: string | null;
+  /** 'scopefinance' = nasceu aqui · 'dashboard' = chegou pela replicação. */
+  origem: string;
+  sincronizado_em: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -88,6 +91,10 @@ export interface ContaReceber {
   status: string;
   forma_pagamento: string | null;
   pago_em: string | null;
+  /** O que entrou de fato. Null = ninguém informou; vale o `valor` cobrado. */
+  valor_pago: number | null;
+  /** Tributos e taxas retidos — a base da comissão é `valor_pago - deducoes`. */
+  deducoes: number;
   conta_id: string | null;
   competencia: string | null;
   asaas_payment_id: string | null;
@@ -98,6 +105,8 @@ export interface ContaReceber {
 export interface ContaPagar {
   id: string;
   fornecedor: string;
+  /** Id do fato na origem (ex.: comissao_id da Dashboard) — único, idempotência. */
+  referencia_externa?: string | null;
   assinatura_id: string | null;
   descricao: string;
   valor: number;

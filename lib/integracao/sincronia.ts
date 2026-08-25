@@ -1,0 +1,354 @@
+import "server-only";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { assinarEstiloHub } from "./auth";
+import { estadoIntegracao } from "./config";
+import { interpretarEvento, normalizarDoc, type Envelope } from "./contrato";
+
+/**
+ * A via de mão dupla com a Scope Dashboard.
+ *
+ * ⚖️ **Decisão do dono, 25/08/2026:** Dashboard (CEO) e ScopeFinance (CFO)
+ * têm poder equivalente e papéis distintos; o cadastro de cliente é núcleo
+ * **compartilhado**. Cliente nasce em qualquer um dos dois e replica para o
+ * outro com o **mesmo `id`**.
+ *
+ * Três mecanismos, e cada um existe porque os outros dois falham de um jeito
+ * diferente:
+ *
+ * 1. **Entrada** (`aplicarEvento`) — a Dashboard nos manda o evento assinado.
+ *    Idempotente por `evento_id`: a escada de retry de lá garante que receber
+ *    o mesmo evento duas vezes seja rotina, não exceção.
+ * 2. **Saída** (`enfileirarEvento` + `entregarFila`) — mesmo padrão outbox da
+ *    Dashboard, e pela mesma razão: gravar e entregar são passos distintos,
+ *    senão a Dashboard fora do ar trava o cadastro de cliente daqui.
+ * 3. **Reconciliação** (`reconciliarComDashboard`) — a rede de segurança das
+ *    outras duas. Evento perdido some sem barulho; a reconciliação é o que
+ *    transforma "sumiu" em "aparece na próxima passada".
+ *
+ * ⛔ **Supressão de eco.** Aplicar um evento da Dashboard NUNCA enfileira
+ * evento de volta. Sem essa regra, um cadastro geraria ping-pong infinito
+ * entre os dois sistemas — e cada volta gravaria linha nas duas outbox.
+ */
+
+/** Escada de retry — os mesmos números que a Dashboard usa (`D-35`). */
+export const ESCADA_RETRY_MS = [0, 60_000, 300_000, 1_800_000, 7_200_000];
+export const MAX_TENTATIVAS = ESCADA_RETRY_MS.length;
+
+// ─── ENTRADA: eventos que a Dashboard nos manda ─────────────────────
+
+export type ResultadoAplicacao =
+  | { estado: "aplicado"; acao: "criar" | "atualizar"; cliente_id: string }
+  | { estado: "duplicado" }
+  | { estado: "ignorado"; motivo: string }
+  | { estado: "erro"; motivo: string };
+
+/**
+ * Registra e aplica um evento recebido.
+ *
+ * Grava na caixa de entrada **antes** de processar: se o processamento
+ * quebrar, o evento continua ali para ser reprocessado. Perder o evento
+ * porque o processamento falhou seria trocar um erro visível por um silêncio.
+ */
+export async function aplicarEvento(
+  supabase: SupabaseClient,
+  env: Envelope
+): Promise<ResultadoAplicacao> {
+  const { error: insErr } = await supabase.from("integracao_recebidos").insert({
+    evento_id: env.id,
+    evento_tipo: env.evento,
+    payload: env,
+  });
+
+  if (insErr) {
+    // 23505 = já recebemos este evento. Não é falha: é a escada de retry da
+    // Dashboard funcionando. Responder "ok" faz ela parar de tentar.
+    if (insErr.code === "23505") return { estado: "duplicado" };
+    return { estado: "erro", motivo: insErr.message };
+  }
+
+  const leitura = interpretarEvento(env);
+
+  if (leitura.acao === "ignorar") {
+    await marcarProcessado(supabase, env.id, null);
+    return { estado: "ignorado", motivo: leitura.motivo };
+  }
+
+  const cliente = leitura.cliente as Record<string, unknown> & { id: string; doc: string | null };
+
+  // Documento repetido em OUTRO id é a colisão que o índice único pega. Ela
+  // significa que a mesma empresa foi cadastrada duas vezes com identidades
+  // diferentes — exatamente o conflito 4.3 do `00-LEVANTAMENTO` da Dashboard.
+  // Reportar é o certo: resolver sozinho escolheria qual das duas verdades
+  // apagar, e essa escolha não é do código.
+  const docNorm = normalizarDoc(cliente.doc);
+  if (docNorm) {
+    const { data: colidente } = await supabase
+      .from("clientes")
+      .select("id, nome, doc")
+      .neq("id", cliente.id)
+      .limit(200);
+    const conflito = (colidente ?? []).find((c) => normalizarDoc(c.doc) === docNorm);
+    if (conflito) {
+      const motivo =
+        `documento ${cliente.doc} já pertence ao cliente ${conflito.id} ("${conflito.nome}") ` +
+        `neste sistema — a mesma empresa tem duas identidades e alguém precisa decidir qual vale`;
+      await marcarProcessado(supabase, env.id, motivo);
+      return { estado: "erro", motivo };
+    }
+  }
+
+  const { error: upErr } = await supabase
+    .from("clientes")
+    .upsert({ ...cliente, sincronizado_em: new Date().toISOString() }, { onConflict: "id" });
+
+  if (upErr) {
+    await marcarProcessado(supabase, env.id, upErr.message);
+    return { estado: "erro", motivo: upErr.message };
+  }
+
+  await marcarProcessado(supabase, env.id, null);
+  return { estado: "aplicado", acao: leitura.acao, cliente_id: cliente.id };
+}
+
+async function marcarProcessado(supabase: SupabaseClient, eventoId: string, erro: string | null) {
+  await supabase
+    .from("integracao_recebidos")
+    .update({ processado: erro === null, processado_em: new Date().toISOString(), erro })
+    .eq("evento_id", eventoId);
+}
+
+// ─── SAÍDA: eventos que mandamos para a Dashboard ───────────────────
+
+/**
+ * Enfileira um evento. **Nunca** faz `fetch` — se fizesse, uma Dashboard lenta
+ * passaria a atrasar o cadastro de cliente que originou o evento.
+ *
+ * Devolve o id da linha para que a rota possa cutucar a entrega logo em
+ * seguida (quase-síncrono) sem que a gravação dependa disso.
+ */
+export async function enfileirarEvento(
+  supabase: SupabaseClient,
+  tipo: string,
+  dados: Record<string, unknown>
+): Promise<string | null> {
+  const { data } = await supabase
+    .from("integracao_enviados")
+    .insert({ evento_tipo: tipo, payload: { evento: tipo, dados } })
+    .select("id")
+    .single();
+  return data?.id ?? null;
+}
+
+export interface ResultadoEntrega {
+  processados: number;
+  entregues: number;
+  falhas: number;
+  em_dead_letter: number;
+  motivo?: string;
+}
+
+/**
+ * Entrega a fila para o webhook de entrada da Dashboard.
+ *
+ * Assina no dialeto `X-Hub-Signature-256` (corpo puro), que é o que a tela de
+ * Webhooks de entrada de lá valida — falar o dialeto do receptor é o que
+ * dispensa qualquer mudança do lado da Dashboard para nos aceitar.
+ */
+export async function entregarFila(
+  supabase: SupabaseClient,
+  limite = 50
+): Promise<ResultadoEntrega> {
+  const vazio: ResultadoEntrega = {
+    processados: 0,
+    entregues: 0,
+    falhas: 0,
+    em_dead_letter: 0,
+  };
+
+  const { dashboardWebhookUrl: url, dashboardWebhookSecret: segredo } = estadoIntegracao();
+  if (!url || !segredo) {
+    return {
+      ...vazio,
+      motivo:
+        "Saída não provisionada: defina SCOPE_DASHBOARD_WEBHOOK_URL e SCOPE_DASHBOARD_WEBHOOK_SECRET.",
+    };
+  }
+
+  const agora = new Date().toISOString();
+  const { data: pendentes } = await supabase
+    .from("integracao_enviados")
+    .select("*")
+    .eq("entregue", false)
+    .lt("tentativas", MAX_TENTATIVAS)
+    .lte("proxima_tentativa_em", agora)
+    .order("criado_em", { ascending: true })
+    .limit(limite);
+
+  const r = { ...vazio };
+
+  for (const evento of pendentes ?? []) {
+    r.processados++;
+    const corpo = JSON.stringify({
+      ...(evento.payload as Record<string, unknown>),
+      id: evento.id,
+      criado_em: evento.criado_em,
+      origem: "scopefinance",
+    });
+
+    let status = 0;
+    let erro: string | null = null;
+    try {
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Scope-Event": evento.evento_tipo,
+          "X-Hub-Signature-256": assinarEstiloHub(segredo, corpo),
+        },
+        body: corpo,
+        signal: AbortSignal.timeout(10_000),
+      });
+      status = resp.status;
+      if (!resp.ok) erro = `HTTP ${resp.status}`;
+    } catch (e) {
+      erro = e instanceof Error ? e.message : "erro de rede";
+    }
+
+    const tentativa = evento.tentativas + 1;
+
+    if (!erro) {
+      await supabase
+        .from("integracao_enviados")
+        .update({
+          entregue: true,
+          entregue_em: new Date().toISOString(),
+          tentativas: tentativa,
+          ultimo_status: status,
+        })
+        .eq("id", evento.id);
+      r.entregues++;
+      continue;
+    }
+
+    await supabase
+      .from("integracao_enviados")
+      .update({
+        tentativas: tentativa,
+        ultimo_erro: erro,
+        ultimo_status: status || null,
+        proxima_tentativa_em: new Date(
+          Date.now() + (ESCADA_RETRY_MS[tentativa] ?? 0)
+        ).toISOString(),
+      })
+      .eq("id", evento.id);
+
+    r.falhas++;
+    // Esgotou as tentativas: sai da fila ativa mas fica consultável. Apagar
+    // seria perder a evidência de que a integração do outro lado quebrou.
+    if (tentativa >= MAX_TENTATIVAS) r.em_dead_letter++;
+  }
+
+  return r;
+}
+
+// ─── RECONCILIAÇÃO: a rede de segurança das outras duas ─────────────
+
+export interface ResultadoReconciliacao {
+  lidos: number;
+  criados: number;
+  atualizados: number;
+  conflitos: { cliente_id: string; nome: string; motivo: string }[];
+  motivo?: string;
+}
+
+/**
+ * Puxa o cadastro mestre da Dashboard e fecha buracos.
+ *
+ * Evento perdido some sem barulho — esta função é o que transforma "sumiu"
+ * em "aparece na próxima passada". Roda no cron e pelo botão da tela.
+ *
+ * ⚠️ Só **acrescenta e atualiza**; nunca apaga. Cliente que existe aqui e não
+ * lá pode ser um cadastro legítimo nascido deste lado (a via de mão dupla
+ * permite isso) — apagá-lo por ausência seria a reconciliação destruindo
+ * exatamente o dado que a decisão do dono autorizou a existir.
+ */
+export async function reconciliarComDashboard(
+  supabase: SupabaseClient
+): Promise<ResultadoReconciliacao> {
+  const vazio: ResultadoReconciliacao = { lidos: 0, criados: 0, atualizados: 0, conflitos: [] };
+  const { dashboardBase: base, dashboardApiKey: chave } = estadoIntegracao();
+  if (!base || !chave) {
+    return {
+      ...vazio,
+      motivo:
+        "Reconciliação não provisionada: defina SCOPE_DASHBOARD_API_BASE e SCOPE_DASHBOARD_API_KEY_OUT.",
+    };
+  }
+
+  let remotos: Array<Record<string, unknown>>;
+  try {
+    const resp = await fetch(`${base}/clientes-mestre`, {
+      headers: { Authorization: `Bearer ${chave}` },
+      signal: AbortSignal.timeout(15_000),
+      cache: "no-store",
+    });
+    if (!resp.ok) return { ...vazio, motivo: `Dashboard respondeu ${resp.status}` };
+    const corpo = (await resp.json()) as { dados?: Array<Record<string, unknown>> };
+    remotos = corpo.dados ?? [];
+  } catch (e) {
+    return { ...vazio, motivo: e instanceof Error ? e.message : "erro de rede" };
+  }
+
+  const { data: locais } = await supabase.from("clientes").select("id, doc, nome");
+  type Local = { id: string; doc: string | null; nome: string };
+  const porId = new Map<string, Local>(((locais ?? []) as Local[]).map((c) => [c.id, c]));
+  const porDoc = new Map<string, Local>();
+  for (const c of (locais ?? []) as Local[]) {
+    const d = normalizarDoc(c.doc);
+    if (d) porDoc.set(d, c);
+  }
+
+  const r: ResultadoReconciliacao = { ...vazio, lidos: remotos.length, conflitos: [] };
+
+  for (const remoto of remotos) {
+    const id = remoto.cliente_id ?? remoto.id;
+    const nome = typeof remoto.nome === "string" ? remoto.nome.trim() : "";
+    if (typeof id !== "string" || !nome) continue;
+
+    const doc = typeof remoto.doc === "string" ? remoto.doc : null;
+    const docNorm = normalizarDoc(doc);
+    const colidente = docNorm ? porDoc.get(docNorm) : undefined;
+    if (colidente && colidente.id !== id) {
+      r.conflitos.push({
+        cliente_id: id,
+        nome,
+        motivo: `documento já pertence ao cliente ${colidente.id} ("${colidente.nome}") aqui`,
+      });
+      continue;
+    }
+
+    const existia = porId.has(id);
+    const { error } = await supabase.from("clientes").upsert(
+      {
+        id,
+        nome,
+        doc,
+        email: typeof remoto.email === "string" ? remoto.email : null,
+        tel: typeof remoto.tel === "string" ? remoto.tel : null,
+        tipo: docNorm?.length === 14 ? "Pessoa Jurídica" : "Pessoa Física",
+        origem: "dashboard",
+        sincronizado_em: new Date().toISOString(),
+      },
+      { onConflict: "id" }
+    );
+
+    if (error) {
+      r.conflitos.push({ cliente_id: id, nome, motivo: error.message });
+      continue;
+    }
+    if (existia) r.atualizados++;
+    else r.criados++;
+  }
+
+  return r;
+}

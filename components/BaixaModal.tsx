@@ -20,7 +20,15 @@ export function BaixaModal({
   const [registrar, setRegistrar] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  const tipoLabel = tabela === "contas_receber" ? "Recebimento" : "Pagamento";
+  // Só conta a receber carrega base de comissão (`RN-04` da Dashboard).
+  // Default = o valor cobrado, deduções zero: o caso comum não deve exigir
+  // digitação, e o campo existe para o caso em que o extrato diverge.
+  const ehReceber = tabela === "contas_receber";
+  const [valorPago, setValorPago] = useState<string>(String(item.valor ?? ""));
+  const [deducoes, setDeducoes] = useState<string>(String(item.deducoes ?? 0));
+
+  const tipoLabel = ehReceber ? "Recebimento" : "Pagamento";
+  const liquido = Number(valorPago || 0) - Number(deducoes || 0);
 
   const confirmar = async () => {
     setSaving(true);
@@ -30,6 +38,9 @@ export function BaixaModal({
         id: item.id,
         conta_id: contaId || null,
         data,
+        ...(ehReceber
+          ? { valor_pago: Number(valorPago || 0), deducoes: Number(deducoes || 0) }
+          : {}),
         registrar_lancamento: registrar && !!contaId,
       });
       onClose();
@@ -50,6 +61,34 @@ export function BaixaModal({
             {db.bancos.map((b) => <option key={b.id} value={b.id}>{b.nome}</option>)}
           </select>
         </Field>
+
+        {ehReceber && (
+          <>
+            <Field label="Valor recebido">
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={valorPago}
+                onChange={(e) => setValorPago(e.target.value)}
+              />
+            </Field>
+            <Field label="Deduções (impostos/taxas)">
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={deducoes}
+                onChange={(e) => setDeducoes(e.target.value)}
+              />
+            </Field>
+            <div className="span2 tiny" style={{ marginTop: -4 }}>
+              Base líquida <strong className="c-orange">{fmt(liquido)}</strong> — é sobre
+              este número que a Scope Dashboard calcula a comissão do comercial.
+            </div>
+          </>
+        )}
+
         <Field label="Registrar no caixa?" span>
           <label className="hgap" style={{ fontSize: 13, color: "var(--text)" }}>
             <input
@@ -59,7 +98,7 @@ export function BaixaModal({
               onChange={(e) => setRegistrar(e.target.checked)}
               style={{ width: "auto" }}
             />
-            Lançar {tabela === "contas_receber" ? "entrada" : "saída"} e ajustar o saldo da conta
+            Lançar {ehReceber ? "entrada" : "saída"} e ajustar o saldo da conta
           </label>
         </Field>
       </div>

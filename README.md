@@ -75,17 +75,81 @@ Os campos `asaas_customer_id` / `asaas_subscription_id` / `asaas_payment_id` já
 
 ---
 
+## Integração com a Scope Dashboard
+
+### O que cada lado faz
+
+| Direção | Como | O quê |
+|---|---|---|
+| Dashboard **lê** daqui | `GET /api/integracao/*`, chave `Bearer` | clientes, resumo (KPIs), série mensal, pagamentos recebidos |
+| Dashboard **escreve** aqui | `POST /api/integracao/contas-pagar` | comissão aprovada vira despesa (idempotente por `referencia_externa`) |
+| Dashboard → aqui, por evento | `POST /api/integracao/eventos`, HMAC | `cliente.criado` / `cliente.atualizado` |
+| Aqui → Dashboard, por evento | outbox `integracao_enviados` → webhook de entrada dela | cliente cadastrado **nesta** tela |
+| Reconciliação | `GET {dashboard}/api/v1/clientes-mestre` | rede de segurança: fecha o buraco de um evento perdido |
+
+**As leituras são síncronas** (a Dashboard chama e espera). **As escritas de
+cadastro são por evento com entrega imediata**: gravamos na outbox e
+entregamos logo depois de responder — nunca durante, senão uma Dashboard
+lenta atrasaria o cadastro de cliente daqui. O cron das 06:15 UTC é a rede de
+segurança, não o caminho normal.
+
+### Provisionar (6 variáveis, 3 pares)
+
+Todas em `.env.local.example`, com o que cada uma liga. Na Vercel elas vão em
+**Project Settings → Environment Variables**. A tela `/integracao` mostra
+quais faltam.
+
+⚠️ **A tela mede presença da variável, não que o valor esteja certo.** Uma
+chave preenchida errado fica verde e falha em silêncio. Use o botão **Testar
+conexão** — só uma chamada real distingue "preenchido" de "funciona".
+
+### Ordem de plugagem
+
+1. Rode o `supabase/schema.sql` de novo (é idempotente) — ele cria as tabelas
+   de integração e o índice único do documento.
+   ⚠️ **Se o índice falhar, ele está funcionando:** já existem CNPJs
+   duplicados. A query de diagnóstico está no próprio arquivo, na seção 1.
+2. Gere os segredos (`openssl rand -hex 32`) e cadastre os dois lados.
+3. Na Dashboard: **Administração → Integrações** (URL e chave daqui) e
+   **Administração → Webhooks de entrada** (conexão de origem `scopefinance`).
+4. Teste pela tela `/integracao` → **Testar conexão** e **Sincronizar agora**.
+
+---
+
+## O que este sistema NÃO tem (leia antes de confiar)
+
+O Gate G0 da Scope Dashboard auditou este repositório em 21/08/2026 e
+registrou riscos que foram **aceitos, não resolvidos**. Parte caiu em
+25/08/2026; o resto continua aberto e está aqui para não ser esquecido.
+
+| Item | Estado |
+|---|---|
+| Suíte de testes | ✅ **existe desde 25/08/2026** — `npm test`, 103 casos (contrato, assinatura, recorrência, sincronia, colunas graváveis) |
+| CI | ✅ **existe desde 25/08/2026** — `.github/workflows/ci.yml`: tipos, testes e build |
+| Build passando | ✅ corrigido em 25/08/2026 — **estava quebrado** por um erro de lint em `assinaturas/page.tsx`, e ninguém tinha rodado `npm run build` |
+| Unicidade de CPF/CNPJ | ✅ índice único normalizado (era o Ponto 1 do Gate G0) |
+| Consumo de `cliente.criado` | ✅ implementado (era o Ponto 7 do Gate G0) |
+| **Integração Asaas exercitada contra a API real** | ⛔ **NUNCA foi.** `lib/asaas.ts` existe e nenhuma chamada real foi feita. Existir arquivo não é integração que funciona |
+| **Histórico de commits** | ⚠️ um único commit inicial até 25/08/2026 — não há evolução para auditar |
+| **Testes com Postgres real** | ⚠️ os testes usam um Supabase em memória: provam a regra de negócio, **não** o SQL. Constraint de banco só é exercitada rodando o schema |
+
+---
+
 ## Estrutura
 ```
 app/
-  (app)/            páginas autenticadas (dashboard, clientes, ... , notas-fiscais)
+  (app)/            páginas autenticadas (dashboard, clientes, ..., integracao)
   api/
     [resource]/     CRUD genérico de todas as tabelas
     acoes/          pagar, gerar-recorrencias, emitir-nf
     cron/recorrencia  endpoint do Vercel Cron
   login/            tela de login
+    integracao/     ponte com a Scope Dashboard (leitura, eventos, saúde, sync)
+    cron/integracao entrega da outbox + reconciliação (06:15 UTC)
 components/          UI compartilhada (Modal, Badge, Sidebar, BaixaModal...)
 lib/                store (client), supabase, asaas, recorrencia, types, format
+  integracao/       contrato (puro), auth (HMAC), config, sincronia
 supabase/schema.sql migração do banco
+tests/              suíte vitest — `npm test`
 _reference/         protótipo original (.jsx) — apenas referência
 ```

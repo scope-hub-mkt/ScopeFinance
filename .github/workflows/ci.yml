@@ -1,0 +1,51 @@
+name: CI
+
+# Gate de CI do ScopeFinance — criado em 25/08/2026.
+#
+# ⚠️ Até esta data o projeto não tinha NENHUMA verificação automática, e o
+# Gate G0 da Scope Dashboard registrou isso como risco ACEITO (`D-18`):
+# *"migrar dado financeiro de um sistema sem teste significa que nenhuma
+# regressão de lá é detectável antes de chegar aqui"*.
+#
+# A auditoria também não rodava o build — e quando ele foi rodado pela
+# primeira vez, em 25/08/2026, **falhou**: um erro de lint pré-existente em
+# `app/(app)/assinaturas/page.tsx`. Um sistema tratado como "V1 finalizada"
+# não compilava. É por isso que `build` está aqui, e não só `test`.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - run: npm ci
+
+      # Ordem escolhida: o mais barato e mais específico primeiro. Um erro de
+      # tipo apontado por `tsc` é mais fácil de ler do que o mesmo erro
+      # embrulhado no build do Next.
+      - name: Tipos
+        run: npm run typecheck
+
+      - name: Testes
+        run: npm run test
+
+      # `next build` roda o ESLint junto — é ele que pegou o defeito de 25/08.
+      # As variáveis do Supabase são placeholders: `createSupabaseAdmin()` só
+      # as lê em tempo de execução, e nenhuma rota é pré-renderizada.
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder
+          SUPABASE_SERVICE_ROLE_KEY: ci-placeholder

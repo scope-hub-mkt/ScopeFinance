@@ -230,3 +230,112 @@ begin
     execute format('create policy "auth_all" on %I for all to authenticated using (true) with check (true)', t);
   end loop;
 end $$;
+
+-- ════════════════════════════════════════════════════════════════════
+--  INTEGRAÇÃO COM A SCOPE DASHBOARD — 25/08/2026
+--
+--  Contexto: `docs/03-CONTRATO-DE-INTEGRACAO ✅.md` da Dashboard e o
+--  Gate G0 (`docs/tasks/02-ROTEIRO-GATE-G0 ✅.md`), assinado em 21/08/2026.
+--
+--  A relação entre os dois sistemas foi definida pelo dono em 25/08/2026:
+--  **não é hierarquia, é papel.** A Dashboard é o CEO, o ScopeFinance é o
+--  CFO — poderes equivalentes, funções distintas, **núcleo de dados
+--  compartilhado**. O cadastro de cliente nasce em qualquer um dos dois e
+--  replica para o outro **com o mesmo `id`**.
+--
+--  É esse "mesmo id" que faz a replicação bidirecional não gerar as duas
+--  verdades do conflito 4.3 do `00-LEVANTAMENTO`: sem ele, cada lado
+--  geraria um uuid próprio e a mesma empresa teria duas identidades.
+-- ════════════════════════════════════════════════════════════════════
+
+-- ─── 1. Unicidade do documento (Gate G0 Ponto 1, decisão `D-19`) ────
+--
+-- ⚠️ Se este índice FALHAR ao rodar, ele está funcionando: significa que já
+-- existem CNPJs duplicados na base. Rode a query de diagnóstico abaixo,
+-- resolva as duplicatas e rode o schema de novo.
+--
+--   select regexp_replace(doc,'[^0-9]','','g') as doc_norm, count(*), array_agg(id)
+--   from clientes where doc is not null and doc <> ''
+--   group by 1 having count(*) > 1;
+--
+-- Índice FUNCIONAL, não `unique (doc)`: "12.345.678/0001-90" e
+-- "12345678000190" são o mesmo CNPJ e passariam os dois por um unique cru —
+-- a restrição existiria sem impedir a duplicata que promete impedir.
+-- É a mesma normalização que a tabela `clientes` da Dashboard já aplica.
+create unique index if not exists ux_clientes_doc_norm
+  on clientes (regexp_replace(doc, '[^0-9]', '', 'g'))
+  where doc is not null and doc <> '';
+
+-- ─── 2. Procedência do cadastro (RNF-19 da Dashboard) ───────────────
+-- Todo dado declara de onde veio. Um cliente que chegou pela Dashboard e um
+-- que foi digitado aqui não são a mesma coisa na hora de auditar.
+alter table clientes add column if not exists origem text not null default 'scopefinance';
+alter table clientes add column if not exists sincronizado_em timestamptz;
+do $$ begin
+  alter table clientes add constraint clientes_origem_chk
+    check (origem in ('scopefinance','dashboard'));
+exception when duplicate_object then null; end $$;
+
+-- ─── 3. Base LÍQUIDA da comissão (RN-04 da Dashboard) ───────────────
+-- `valor` é o que foi cobrado; `valor_pago` é o que entrou de fato (pode
+-- divergir: desconto, juros, pagamento parcial). `deducoes` são tributos e
+-- taxas retidos. A comissão da Dashboard calcula sobre (pago − deduções) —
+-- calcular sobre o bruto pagaria comissão sobre dinheiro que a Scope não viu.
+alter table contas_receber add column if not exists valor_pago numeric(14,2);
+alter table contas_receber add column if not exists deducoes numeric(14,2) not null default 0;
+
+-- ─── 4. Idempotência do lançamento de comissão (RN-14 da Dashboard) ─
+-- A Dashboard manda a comissão aprovada para cá. Sem esta coluna, um retry
+-- de rede lançaria a mesma comissão duas vezes — e ninguém notaria até o
+-- fechamento do mês.
+alter table contas_pagar add column if not exists referencia_externa text;
+create unique index if not exists ux_pagar_ref_externa
+  on contas_pagar (referencia_externa) where referencia_externa is not null;
+
+-- ─── 5. Caixa de entrada de eventos (o que a Dashboard nos manda) ───
+-- Grava ANTES de processar: nada se perde, tudo é auditável e reprocessável.
+-- `evento_id` único é o que torna a entrega idempotente — a Dashboard tem
+-- escada de retry, então receber o mesmo evento duas vezes é o normal, não a
+-- exceção.
+create table if not exists integracao_recebidos (
+  id uuid primary key default gen_random_uuid(),
+  evento_id text not null unique,
+  evento_tipo text not null,
+  payload jsonb not null,
+  processado boolean not null default false,
+  processado_em timestamptz,
+  erro text,
+  recebido_em timestamptz not null default now()
+);
+create index if not exists idx_recebidos_pend on integracao_recebidos(processado, recebido_em);
+
+-- ─── 6. Outbox de eventos (o que MANDAMOS para a Dashboard) ─────────
+-- Mesmo padrão da Dashboard (`03` §4.4) e pela mesma razão: gravar o evento
+-- e entregá-lo são passos distintos, senão a Dashboard fora do ar passa a
+-- travar o cadastro de cliente daqui.
+create table if not exists integracao_enviados (
+  id uuid primary key default gen_random_uuid(),
+  evento_tipo text not null,
+  payload jsonb not null,
+  entregue boolean not null default false,
+  entregue_em timestamptz,
+  tentativas int not null default 0,
+  ultimo_status int,
+  ultimo_erro text,
+  proxima_tentativa_em timestamptz not null default now(),
+  criado_em timestamptz not null default now()
+);
+create index if not exists idx_enviados_fila
+  on integracao_enviados(entregue, proxima_tentativa_em) where entregue = false;
+
+-- RLS das tabelas novas — mesmo tratamento das demais.
+do $$
+declare t text;
+begin
+  foreach t in array array['integracao_recebidos','integracao_enviados']
+  loop
+    execute format('alter table %I enable row level security', t);
+    execute format('drop policy if exists "auth_all" on %I', t);
+    execute format('create policy "auth_all" on %I for all to authenticated using (true) with check (true)', t);
+  end loop;
+end $$;

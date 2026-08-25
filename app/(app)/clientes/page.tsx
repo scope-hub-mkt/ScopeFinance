@@ -52,10 +52,10 @@ export default function ClientesPage() {
       <div className="card tbl-wrap">
         <table>
           <thead>
-            <tr><th>Nome</th><th>Tipo</th><th>Email</th><th>Telefone</th><th>Status</th><th>Ações</th></tr>
+            <tr><th>Nome</th><th>Tipo</th><th>Email</th><th>Telefone</th><th>Origem</th><th>Status</th><th>Ações</th></tr>
           </thead>
           <tbody>
-            {!list.length && <tr><td colSpan={6}><div className="empty">Nenhum cliente cadastrado</div></td></tr>}
+            {!list.length && <tr><td colSpan={7}><div className="empty">Nenhum cliente cadastrado</div></td></tr>}
             {list.map((c) => (
               <tr key={c.id}>
                 <td>
@@ -64,7 +64,14 @@ export default function ClientesPage() {
                 </td>
                 <td className="muted">{c.tipo || "—"}</td>
                 <td className="muted">{c.email || "—"}</td>
-                <td className="muted">{c.tel || "—"}</td>
+                <td>
+                  {/* Procedência declarada (RNF-19 da Dashboard): um cliente
+                      que chegou pela replicação e um que foi digitado aqui não
+                      são a mesma coisa na hora de auditar uma divergência. */}
+                  <span className={`bdg ${c.origem === "dashboard" ? "bdg-b" : "bdg-x"}`}>
+                    {c.origem === "dashboard" ? "Dashboard" : "Finance"}
+                  </span>
+                </td>
                 <td><Badge s={c.status || "Ativo"} /></td>
                 <td>
                   <div className="actions">
@@ -98,6 +105,12 @@ export default function ClientesPage() {
             <Field label="Endereço" span><input value={form.endereco || ""} onChange={set("endereco")} /></Field>
             <Field label="Observações" span><textarea value={form.obs || ""} onChange={set("obs")} /></Field>
           </div>
+          <p className="tiny" style={{ marginTop: 10, lineHeight: 1.6 }}>
+            ⚠ Este cadastro é compartilhado com a Scope Dashboard: salvar aqui
+            replica para lá com o mesmo id. O CPF/CNPJ é único — comparado só
+            pelos dígitos, então “12.345.678/0001-90” e “12345678000190” são o
+            mesmo documento.
+          </p>
           <div className="mact">
             <button className="btn" onClick={() => setOpen(false)}>Cancelar</button>
             <button className="btn btn-p" onClick={salvar} disabled={saving}>{saving ? "Salvando..." : "Salvar"}</button>

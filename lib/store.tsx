@@ -82,6 +82,10 @@ interface StoreCtx {
     id: string;
     conta_id?: string | null;
     data?: string;
+    /** Só receber — o que entrou de fato (base da comissão da Dashboard). */
+    valor_pago?: number;
+    /** Só receber — tributos/taxas retidos (`RN-04`: a base é líquida). */
+    deducoes?: number;
     registrar_lancamento?: boolean;
   }) => Promise<void>;
   gerarRecorrencias: () => Promise<{ geradas: number; receber: number; pagar: number }>;

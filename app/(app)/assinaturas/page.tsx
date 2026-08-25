@@ -164,7 +164,7 @@ export default function AssinaturasPage() {
             <Field label="Observações" span><textarea value={form.obs || ""} onChange={set("obs")} /></Field>
           </div>
           <div className="tiny" style={{ marginTop: 8 }}>
-            Se a "Próxima cobrança" ficar em branco, será usada a data de início.
+            Se a &quot;Próxima cobrança&quot; ficar em branco, será usada a data de início.
           </div>
           <div className="mact">
             <button className="btn" onClick={() => setOpen(false)}>Cancelar</button>
