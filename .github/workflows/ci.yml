@@ -7,10 +7,15 @@ name: CI
 # *"migrar dado financeiro de um sistema sem teste significa que nenhuma
 # regressão de lá é detectável antes de chegar aqui"*.
 #
-# A auditoria também não rodava o build — e quando ele foi rodado pela
-# primeira vez, em 25/08/2026, **falhou**: um erro de lint pré-existente em
-# `app/(app)/assinaturas/page.tsx`. Um sistema tratado como "V1 finalizada"
-# não compilava. É por isso que `build` está aqui, e não só `test`.
+# ⚠️ **E o `lint` era pior que ausente: era falso.** O script chamava
+# `next lint` sem ESLint instalado e sem config — comando que promete análise
+# e entrega silêncio. O `next build` fazia o mesmo (pula a etapa quando não
+# acha ESLint), e por isso o `Initial commit` deployou na Vercel com um erro
+# de aspas não escapadas no código. Um verde que não verifica nada é pior do
+# que vermelho, porque é lido como garantia.
+#
+# Por isso o `lint` é um passo PRÓPRIO aqui, e o ESLint é dependência real do
+# `package.json` — não algo que o build possa decidir pular em silêncio.
 
 on:
   push:
@@ -37,12 +42,15 @@ jobs:
       - name: Tipos
         run: npm run typecheck
 
+      - name: Lint
+        run: npm run lint
+
       - name: Testes
         run: npm run test
 
-      # `next build` roda o ESLint junto — é ele que pegou o defeito de 25/08.
       # As variáveis do Supabase são placeholders: `createSupabaseAdmin()` só
-      # as lê em tempo de execução, e nenhuma rota é pré-renderizada.
+      # as lê em tempo de execução, e nenhuma rota é pré-renderizada — por
+      # isso o build passa sem projeto real.
       - name: Build
         run: npm run build
         env:

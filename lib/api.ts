@@ -13,7 +13,6 @@ export function fail(message: string, status = 400) {
 export function handleError(e: unknown) {
   if (e instanceof UnauthorizedError) return fail("Não autenticado", 401);
   const msg = e instanceof Error ? e.message : "Erro interno";
-  // eslint-disable-next-line no-console
   console.error("[api]", e);
   return fail(msg, 500);
 }

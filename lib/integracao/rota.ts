@@ -47,7 +47,6 @@ export function rotaIntegracao(handler: (req: Request) => Promise<NextResponse>)
     try {
       return await handler(req);
     } catch (e) {
-      // eslint-disable-next-line no-console
       console.error("[integracao]", new URL(req.url).pathname, e);
       return recusa("Erro interno ao atender a integração", 500);
     }

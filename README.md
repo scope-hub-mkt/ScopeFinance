@@ -125,8 +125,8 @@ registrou riscos que foram **aceitos, não resolvidos**. Parte caiu em
 | Item | Estado |
 |---|---|
 | Suíte de testes | ✅ **existe desde 25/08/2026** — `npm test`, 103 casos (contrato, assinatura, recorrência, sincronia, colunas graváveis) |
-| CI | ✅ **existe desde 25/08/2026** — `.github/workflows/ci.yml`: tipos, testes e build |
-| Build passando | ✅ corrigido em 25/08/2026 — **estava quebrado** por um erro de lint em `assinaturas/page.tsx`, e ninguém tinha rodado `npm run build` |
+| CI | ✅ **existe desde 25/08/2026** — `.github/workflows/ci.yml`: tipos, **lint**, testes e build |
+| **Lint** | ✅ **passou a existir de verdade em 25/08/2026.** O script era `next lint` **sem ESLint instalado e sem config** — um comando que promete análise e entrega silêncio: saía limpo porque não olhava para nada. Agora ESLint é dependência real, há `eslint.config.mjs`, e o CI tem passo próprio de lint (0 erros, 23 avisos) |
 | Unicidade de CPF/CNPJ | ✅ índice único normalizado (era o Ponto 1 do Gate G0) |
 | Consumo de `cliente.criado` | ✅ implementado (era o Ponto 7 do Gate G0) |
 | **Integração Asaas exercitada contra a API real** | ⛔ **NUNCA foi.** `lib/asaas.ts` existe e nenhuma chamada real foi feita. Existir arquivo não é integração que funciona |
