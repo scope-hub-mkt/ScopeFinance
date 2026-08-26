@@ -129,3 +129,106 @@ export function veredito(itens: ItemDiagnostico[]): {
     saida: !falta("SCOPE_DASHBOARD_WEBHOOK_URL") && !falta("SCOPE_DASHBOARD_WEBHOOK_SECRET"),
   };
 }
+
+/**
+ * O pedaço de uma resposta do PostgREST que interessa a quem está depurando.
+ *
+ * Tipo próprio, e não o `PostgrestResponse` do supabase-js, porque a sonda
+ * precisa aceitar **qualquer** forma que a biblioteca produza — inclusive a
+ * degenerada descrita abaixo, em que `message` vem string vazia e
+ * `code`/`details`/`hint` nem existem.
+ */
+export interface RespostaDeSonda {
+  error: {
+    message?: string | null;
+    code?: string | null;
+    details?: string | null;
+    hint?: string | null;
+  } | null;
+  status?: number;
+  statusText?: string;
+}
+
+/**
+ * Descreve a falha de uma sonda, ou `null` se ela passou.
+ *
+ * ⚖️ **Por que existe — e por que só `error.message` não bastava.** Em
+ * 26/08/2026 a versão anterior desta rota passou a expor o erro de cada
+ * sonda; na primeira chamada seguinte, a de `integracao_enviados` falhou e o
+ * relatório saiu **`"integracao_enviados: "`** — nome, dois pontos, nada.
+ * Um endpoint de saúde que anuncia a falha sem dizer qual não é melhor do
+ * que um que a esconde.
+ *
+ * A causa é estrutural, e está no `@supabase/postgrest-js` (2.108.2,
+ * `processResponse`): resposta não-ok tem o corpo lido e passado por
+ * `JSON.parse`; se ele estourar, o erro vira `{ message: corpo }`. As sondas
+ * usam `head: true`, ou seja **HTTP HEAD — que por protocolo nunca tem
+ * corpo**. Logo, para toda resposta de erro numa sonda de contagem, o corpo é
+ * `""`, o `JSON.parse` estoura e a mensagem nasce vazia. Não é um caso raro:
+ * é o único caso possível.
+ *
+ * O que sobra de informação nesse cenário é o **status HTTP**, e é por isso
+ * que ele entra aqui. `HTTP 503 Service Unavailable` responde a pergunta que
+ * `""` deixava aberta.
+ */
+export function descreverFalha(tabela: string, r: RespostaDeSonda): string | null {
+  if (!r.error) return null;
+  const partes = [r.error.message, r.error.code, r.error.hint]
+    .map((p) => (p ?? "").trim())
+    .filter((p) => p !== "");
+  // `status: 0` é o que o postgrest-js devolve quando o `fetch` nem saiu —
+  // não é status HTTP nenhum, e imprimir "HTTP 0" enganaria.
+  const http = r.status ? `HTTP ${r.status}${r.statusText ? ` ${r.statusText}` : ""}` : null;
+  const dito = [partes.join(" · ") || null, http].filter(Boolean).join(" · ");
+  return `${tabela}: ${dito || "falhou sem mensagem, sem código e sem status"}`;
+}
+
+/** Uma contagem do banco: o que a sonda mede, mais o que ela reporta se falhar. */
+export type Contagem = RespostaDeSonda & { count: number | null };
+
+export interface Alvo {
+  nome: string;
+  contar: () => PromiseLike<Contagem>;
+}
+
+export interface Medida {
+  nome: string;
+  contagem: number | null;
+  /** Descrição da falha que sobreviveu à segunda tentativa, ou `null`. */
+  erro: string | null;
+  /** Falha da primeira tentativa que a segunda desmentiu, ou `null`. */
+  instavel: string | null;
+}
+
+/**
+ * Conta uma tabela — **e tenta de novo uma vez** se a primeira falhar.
+ *
+ * ⚖️ **Por que a segunda tentativa existe.** O sintoma que originou tudo isto
+ * é de partida a frio: na primeira chamada depois de um deploy (ou de um
+ * tempo ocioso), uma das três sondas volta erro e as outras duas voltam
+ * número; a chamada seguinte, segundos depois, passa inteira. Sem retentativa,
+ * `alcancavel` sai `false` para um banco que está perfeitamente de pé, e o
+ * endpoint que existe para dar confiança vira fonte de alarme falso.
+ *
+ * ⛔ **Retentar não é esconder.** Quando a segunda passa, a falha da primeira
+ * NÃO é descartada: ela sai no campo `instavel` da resposta. `alcancavel`
+ * responde "o banco respondeu?"; `instavel` responde "de primeira?". Um
+ * endpoint de saúde que apagasse o blip estaria mentindo por omissão — que é
+ * exatamente o defeito que esta rota já corrigiu uma vez.
+ */
+export async function sondar(alvo: Alvo): Promise<Medida> {
+  const primeira = await alvo.contar();
+  const falha = descreverFalha(alvo.nome, primeira);
+  if (!falha) {
+    return { nome: alvo.nome, contagem: primeira.count ?? null, erro: null, instavel: null };
+  }
+
+  const segunda = await alvo.contar();
+  const falhaDaSegunda = descreverFalha(alvo.nome, segunda);
+  return {
+    nome: alvo.nome,
+    contagem: segunda.count ?? null,
+    erro: falhaDaSegunda,
+    instavel: falhaDaSegunda ? null : falha,
+  };
+}
