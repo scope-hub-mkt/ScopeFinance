@@ -36,6 +36,17 @@ export async function GET(req: Request) {
   if (!autenticado) return NextResponse.json(base);
 
   // Só para quem provou a credencial: contagens, que são dado de negócio.
+  //
+  // ⚠️ **Cada sonda reporta o PRÓPRIO erro** — corrigido em 26/08/2026, e a
+  // correção nasceu de um sintoma real: na primeira chamada após um deploy,
+  // `contas_receber` voltou `null` enquanto as outras duas voltaram número.
+  // A versão anterior só expunha `clientes.error`, então o motivo do `null`
+  // ficou invisível e virou mistério — num endpoint de SAÚDE, que existe
+  // exatamente para não deixar nada invisível.
+  //
+  // `null` com `erro: null` continua possível e significa outra coisa:
+  // consulta respondeu sem contagem. Distinguir "falhou" de "não contou" é o
+  // trabalho deste endpoint.
   const supabase = createSupabaseAdmin();
   const [clientes, receber, fila] = await Promise.all([
     supabase.from("clientes").select("id", { count: "exact", head: true }),
@@ -46,14 +57,22 @@ export async function GET(req: Request) {
       .eq("entregue", false),
   ]);
 
+  const erros = [
+    clientes.error && `clientes: ${clientes.error.message}`,
+    receber.error && `contas_receber: ${receber.error.message}`,
+    fila.error && `integracao_enviados: ${fila.error.message}`,
+  ].filter(Boolean) as string[];
+
   return NextResponse.json({
     ...base,
     banco: {
-      alcancavel: !clientes.error,
+      // Alcançável = NENHUMA das três falhou. Antes bastava a primeira passar,
+      // e duas tabelas podiam estar inacessíveis com o banco dito "alcançável".
+      alcancavel: erros.length === 0,
       clientes: clientes.count ?? null,
       contas_receber: receber.count ?? null,
       fila_de_saida: fila.count ?? null,
-      erro: clientes.error?.message ?? null,
+      erro: erros.length === 0 ? null : erros.join(" · "),
     },
   });
 }
