@@ -298,7 +298,14 @@ export function interpretarEvento(env: Envelope): ResultadoEvento {
       email: typeof d.email === "string" ? d.email : null,
       tel: typeof d.tel === "string" ? d.tel : null,
       tipo: normalizarDoc(doc)?.length === 14 ? "Pessoa Jurídica" : "Pessoa Física",
-      status: typeof d.status === "string" ? d.status : "Ativo",
+      // ⚠️ **`status` só entra se o payload trouxer.** Ele é campo NOSSO: a
+      // Dashboard não tem coluna de status em `clientes` e nunca o envia. Fixar
+      // "Ativo" aqui fazia toda `cliente.atualizado` RESSUSCITAR um cliente
+      // inativado daqui — bastava corrigir o nome lá para ele voltar a contar
+      // no `/resumo`, sem ninguém pedir e sem nada registrar. Omitido, o
+      // upsert não toca a coluna; na criação, quem responde é o
+      // `default 'Ativo'` do schema, que é o lugar certo desse padrão.
+      ...(typeof d.status === "string" ? { status: d.status } : {}),
       origem: "dashboard",
     },
   };

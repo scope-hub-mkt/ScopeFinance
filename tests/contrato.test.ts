@@ -309,4 +309,38 @@ describe("interpretarEvento — os DOIS formatos de cliente.criado da Dashboard"
     const r = interpretarEvento(env("cliente.atualizado", { cliente_id: "c1", nome: "Novo nome" }));
     expect(r.acao).toBe("atualizar");
   });
+
+  // ── `status`: o campo que a Dashboard não tem, e que por isso não pode
+  // chegar de lá como "Ativo". Achado em 26/08/2026 lendo a emissão dela
+  // (`lib/dominio/clientes.ts`): o payload manda cliente_id, nome, doc,
+  // email, tel e fonte — status, nunca.
+  it("payload sem status NÃO carrega status nenhum — a chave nem existe", () => {
+    const r = interpretarEvento(env("cliente.atualizado", { cliente_id: "c1", nome: "Novo nome" }));
+    if (r.acao === "atualizar") {
+      // `toMatchObject` não pegaria isto: a ausência da chave é o teste.
+      expect(Object.keys(r.cliente)).not.toContain("status");
+    }
+  });
+
+  it("editar o nome na Dashboard não ressuscita cliente inativado aqui", () => {
+    // O defeito: `status: … : "Ativo"` fixo fazia o upsert reescrever a coluna
+    // a cada edição. Um cliente marcado Inativo daqui voltava a Ativo — e a
+    // contagem do `/resumo` mudava sem ninguém pedir.
+    const r = interpretarEvento(env("cliente.atualizado", { cliente_id: "c1", nome: "Nome corrigido" }));
+    if (r.acao === "atualizar") expect(r.cliente.status).toBeUndefined();
+  });
+
+  it("status que VEM no payload é respeitado — quem manda continua mandando", () => {
+    const r = interpretarEvento(
+      env("cliente.atualizado", { cliente_id: "c1", nome: "Acme", status: "Inativo" })
+    );
+    if (r.acao === "atualizar") expect(r.cliente.status).toBe("Inativo");
+  });
+
+  it("na criação, a ausência de status cai no default do schema, não em null", () => {
+    // `clientes.status` é `not null default 'Ativo'`: omitir a coluna no
+    // insert dá Ativo. Mandar `null` explodiria a constraint.
+    const r = interpretarEvento(env("cliente.criado", { cliente_id: "c1", nome: "Acme" }));
+    if (r.acao === "criar") expect(Object.keys(r.cliente)).not.toContain("status");
+  });
 });
