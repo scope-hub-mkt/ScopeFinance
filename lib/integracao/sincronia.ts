@@ -209,7 +209,19 @@ export async function entregarFila(
         signal: AbortSignal.timeout(10_000),
       });
       status = resp.status;
-      if (!resp.ok) erro = `HTTP ${resp.status}`;
+      // Mesmo motivo do `descreverResposta` da reconciliação: `ultimo_erro`
+      // fica gravado na fila e é o que alguém vai ler daqui a uma semana
+      // para descobrir por que a entrega parou. "HTTP 401" não diz se o
+      // segredo está errado ou se a URL caiu numa rota protegida.
+      if (!resp.ok) {
+        let corpo = "";
+        try {
+          corpo = (await resp.text()).replace(/\s+/g, " ").trim().slice(0, 200);
+        } catch {
+          corpo = "";
+        }
+        erro = corpo ? `HTTP ${resp.status} — ${corpo}` : `HTTP ${resp.status}`;
+      }
     } catch (e) {
       erro = e instanceof Error ? e.message : "erro de rede";
     }
@@ -253,6 +265,41 @@ export async function entregarFila(
 
 // ─── RECONCILIAÇÃO: a rede de segurança das outras duas ─────────────
 
+/**
+ * Descreve uma resposta HTTP que não veio `ok`, **com o corpo junto**.
+ *
+ * ⚖️ **Por que o status sozinho não bastava** — 26/08/2026, sintoma real. A
+ * reconciliação vinha reportando `"Dashboard respondeu 401"`, e esse texto
+ * cabe em três causas com correções completamente diferentes:
+ *
+ *   1. a nossa chave não confere com nenhuma da Dashboard;
+ *   2. a URL caiu numa implantação com Vercel Authentication ligada, e quem
+ *      recusou foi a Vercel, não a aplicação;
+ *   3. a chave é válida mas foi revogada lá.
+ *
+ * O corpo distingue as três na primeira leitura: a aplicação responde
+ * `{"error":{"code":"unauthorized","message":"API key ausente ou inválida"}}`,
+ * a Vercel responde HTML. Sem ele, depurar exige refazer a chamada à mão —
+ * que é precisamente o trabalho que um campo `motivo` existe para poupar.
+ *
+ * É a mesma lição de `descreverFalha` em `config.ts`, aplicada à outra ponta:
+ * **relatório de falha que omite a evidência não é relatório.**
+ */
+async function descreverResposta(resp: Response): Promise<string> {
+  let corpo = "";
+  try {
+    corpo = (await resp.text()).replace(/\s+/g, " ").trim();
+  } catch {
+    corpo = "";
+  }
+  // Teto de 300: o corpo pode ser uma página HTML inteira, e o `motivo` vai
+  // para a tela. O suficiente para identificar quem recusou, sem despejar
+  // um documento dentro de um campo de diagnóstico.
+  if (corpo.length > 300) corpo = corpo.slice(0, 300) + "…";
+  return corpo ? `Dashboard respondeu ${resp.status} — ${corpo}` : `Dashboard respondeu ${resp.status}`;
+}
+
+
 export interface ResultadoReconciliacao {
   lidos: number;
   criados: number;
@@ -292,7 +339,7 @@ export async function reconciliarComDashboard(
       signal: AbortSignal.timeout(15_000),
       cache: "no-store",
     });
-    if (!resp.ok) return { ...vazio, motivo: `Dashboard respondeu ${resp.status}` };
+    if (!resp.ok) return { ...vazio, motivo: await descreverResposta(resp) };
     const corpo = (await resp.json()) as { dados?: Array<Record<string, unknown>> };
     remotos = corpo.dados ?? [];
   } catch (e) {

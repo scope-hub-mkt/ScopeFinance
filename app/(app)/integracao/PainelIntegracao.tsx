@@ -23,17 +23,39 @@ export function PainelIntegracao({
   const [testando, setTestando] = useState(false);
   const [sincronizando, setSincronizando] = useState(false);
   const [saude, setSaude] = useState<Record<string, any> | null>(null);
+  const [sonda, setSonda] = useState<Record<string, any> | null>(null);
   const [ultimaSync, setUltimaSync] = useState<Record<string, any> | null>(null);
 
+  /**
+   * ⚖️ **Duas perguntas, não uma** — corrigido em 26/08/2026.
+   *
+   * Até aqui este botão só chamava o nosso próprio `/saude` e anunciava
+   * "Serviço de integração no ar". Isso é verdade e é insuficiente: a
+   * reconciliação estava falhando com 401 **em toda passada** enquanto os
+   * três indicadores do topo diziam "Pronto". O botão media se NÓS estamos
+   * de pé; ninguém media se a Dashboard nos aceita.
+   *
+   * Agora ele faz as duas, e o veredito é o da segunda — porque é a que pode
+   * estar vermelha com todas as variáveis preenchidas.
+   */
   const testar = async () => {
     setTestando(true);
     try {
-      // Sem Authorization de propósito: é o teste do que um chamador anônimo
-      // enxerga. Se esta rota não responder, nada do resto responde.
+      // 1. Sem Authorization de propósito: o que um chamador anônimo enxerga.
+      //    Se esta rota não responder, nada do resto responde.
       const res = await fetch("/api/integracao/saude", { cache: "no-store" });
-      const body = await res.json();
-      setSaude(body);
-      notify(res.ok ? "Serviço de integração no ar." : `Falhou: HTTP ${res.status}`, res.ok ? "ok" : "err");
+      setSaude(await res.json());
+      if (!res.ok) {
+        notify(`Nosso /saude falhou: HTTP ${res.status}`, "err");
+        return;
+      }
+
+      // 2. A chamada real à Dashboard, com a chave de saída — a mesma que a
+      //    reconciliação faz. É esta que distingue preenchido de funcionando.
+      const resSonda = await fetch("/api/integracao/testar", { method: "POST" });
+      const s = await resSonda.json();
+      setSonda(s);
+      notify(s?.ok ? s.mensagem : `Dashboard: ${s?.mensagem ?? `HTTP ${resSonda.status}`}`, s?.ok ? "ok" : "err");
     } catch (e) {
       notify(e instanceof Error ? e.message : "Erro de rede", "err");
     } finally {
@@ -108,8 +130,10 @@ export function PainelIntegracao({
         </p>
         <p className="tiny" style={{ marginTop: 8, lineHeight: 1.7 }}>
           ⚠ A tabela abaixo mede <strong>presença da variável</strong>, não que o
-          valor esteja certo. Só o botão “Testar conexão” distingue preenchido de
-          funcionando.
+          valor esteja certo — uma chave truncada aparece como “Configurada”.
+          Quem distingue preenchido de funcionando é o botão “Testar conexão”,
+          que desde 26/08/2026 chama a Dashboard de verdade com a chave de
+          saída, em vez de só perguntar se nós estamos de pé.
         </p>
       </div>
 
@@ -142,6 +166,23 @@ export function PainelIntegracao({
           </tbody>
         </table>
       </div>
+
+      {sonda && (
+        <div className="card" style={{ marginTop: 16 }}>
+          <div className="stitle">
+            Chamada real à Dashboard{" "}
+            <span className={`bdg ${sonda.ok ? "bdg-g" : "bdg-r"}`}>
+              {sonda.ok ? "aceita" : "recusada"}
+            </span>
+          </div>
+          <p className="muted" style={{ fontSize: 12.5, lineHeight: 1.7 }}>{sonda.mensagem}</p>
+          {sonda.acao && (
+            <p className="tiny" style={{ marginTop: 8, lineHeight: 1.7 }}>
+              <strong>O que fazer:</strong> {sonda.acao}
+            </p>
+          )}
+        </div>
+      )}
 
       {saude && (
         <div className="card" style={{ marginTop: 16 }}>
