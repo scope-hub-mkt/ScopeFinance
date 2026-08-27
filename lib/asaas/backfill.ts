@@ -139,6 +139,26 @@ export async function backfillClientes(
   r.tem_mais = pagina.hasMore;
   r.proximo_offset = pagina.hasMore ? offset + pagina.data.length : null;
 
+  /**
+   * Documentos reivindicados **dentro desta passada**.
+   *
+   * ⚖️ **Sem isto, a passada seca mente por omissão — e mente justamente sobre
+   * o caso que importa.** Ela não grava nada, então o segundo `customer` com
+   * um documento repetido não encontra o primeiro no banco (o primeiro nunca
+   * foi gravado) e é contado como "criado". Resultado: o relatório que existe
+   * para dizer *o que vai acontecer* esconderia o único conflito real da
+   * importação, e ele só apareceria quando o índice único recusasse — no meio
+   * da gravação, com metade do lote dentro.
+   *
+   * Medido em 28/08/2026: dois `customer` diferentes do Asaas carregam o mesmo
+   * CNPJ `32854081000183`. Não é hipótese, é o dado.
+   *
+   * ⚠️ O conjunto vale por página. Duplicata separada por mais de 100 cadastros
+   * escaparia da passada seca — mas não da gravação, onde o índice único do
+   * banco é quem responde. A trava de verdade é o índice; isto é o aviso.
+   */
+  const reivindicados = new Map<string, string>();
+
   for (const bruto of pagina.data) {
     const { linha, documento, asaasId } = clienteDoAsaas(bruto);
     if (!asaasId) {
@@ -188,6 +208,22 @@ export async function backfillClientes(
       r.criados++;
       continue;
     }
+
+    const jaReivindicado = reivindicados.get(documento);
+    if (jaReivindicado && jaReivindicado !== asaasId) {
+      r.conflitos.push({
+        etapa: "clientes",
+        asaas_id: asaasId,
+        documento,
+        nome: String(linha.nome),
+        motivo:
+          `o documento ${documento} chega DUAS VEZES nesta importação: ` +
+          `pelos customers ${jaReivindicado} e ${asaasId}. São dois cadastros do ` +
+          `gateway para a mesma empresa — o primeiro entrou, este espera decisão humana.`,
+      });
+      continue;
+    }
+    reivindicados.set(documento, asaasId);
 
     const { data: porDoc } = await supabase
       .from("clientes")
