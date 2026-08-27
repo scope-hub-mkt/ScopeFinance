@@ -131,6 +131,13 @@ export function linhaDaCobranca(
     // O customer viaja na própria linha para que o religamento do §2.3 seja
     // um `update` com `where`, e não uma varredura de JSON que erra calada.
     asaas_customer_id: typeof o.customer === "string" ? o.customer : null,
+    // §8.1: o submenu de Vendas vira um `where` sobre índice em vez de um
+    // cálculo por linha. Classificado UMA vez, aqui, pela mesma função que o
+    // webhook e o backfill usam.
+    tipo_venda: tipoDaVenda(o),
+    parcela_numero:
+      typeof o.installmentNumber === "number" ? o.installmentNumber : null,
+    parcelamento_id: typeof o.installment === "string" ? o.installment : null,
     vencimento,
     // ⚠️ A competência é o mês do VENCIMENTO, não o de hoje: é o que faz a
     // cobrança de janeiro paga em março continuar contando em janeiro.

@@ -15,9 +15,30 @@ const NAV: { g: string; items: { href: string; icon: string; l: string }[] }[] =
     ],
   },
   {
+    // `RF-FIN-04` + `P-04` do §8.1, confirmado pelo dono em 28/08/2026.
+    //
+    // ⚠️ **A colisão que o board não viu:** ele pedia renomear `Parcelamentos`
+    // para `Contratos`, e `Cadastros → Contratos` JÁ existia — dois itens de
+    // menu com o mesmo nome, significando coisas diferentes. A resolução: há
+    // **um só "Contratos"**, e ele mora em Vendas. "Parcelamentos" é como o
+    // outro produto (referência 02) chama a mesma coisa.
     g: "Cadastros",
     items: [
       { href: "/clientes", icon: "ti-users", l: "Clientes" },
+      { href: "/servicos", icon: "ti-package", l: "Serviços" },
+      // A fila do §2.3/§2.4. Fica em Cadastros porque é cadastro pela metade —
+      // e porque esconder o que bloqueia cobrança é o defeito que ela corrige.
+      { href: "/revisao", icon: "ti-alert-circle", l: "Em revisão" },
+    ],
+  },
+  {
+    // `Cobranças` → **Vendas**, como o board pede. Cada submenu tem origem
+    // definida (§8.1): Avulsas = PAYMENT_* sem assinatura · Assinaturas =
+    // SUBSCRIPTION_* mais os PAYMENT_* filhos · Contratos = cobrança parcelada.
+    g: "Vendas",
+    items: [
+      { href: "/vendas", icon: "ti-copy", l: "Todas" },
+      { href: "/vendas/avulsas", icon: "ti-file", l: "Avulsas" },
       { href: "/contratos", icon: "ti-file-text", l: "Contratos" },
       { href: "/assinaturas", icon: "ti-refresh", l: "Assinaturas" },
     ],
