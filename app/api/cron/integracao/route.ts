@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { entregarFila, reconciliarComDashboard } from "@/lib/integracao/sincronia";
+import { processarPendentes, saudeDaFila } from "@/lib/asaas/processar";
 import { ok, fail, handleError } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
@@ -34,7 +35,16 @@ export async function GET(req: NextRequest) {
 
     const recebidos = await reconciliarComDashboard(supabase);
 
-    return ok({ ok: true, enviados, recebidos });
+    // ⚖️ A varredura do Asaas entra aqui como TERCEIRA camada, não como a
+    // principal. A primeira é o `after()` da própria rota do webhook; a
+    // segunda é o workflow do GitHub Actions a cada 15 min. Esta é a que
+    // sobra quando as duas falharem — e ela cabe neste cron porque o plano
+    // Hobby da Vercel dá 2 crons por projeto, e os dois já estão usados.
+    const asaas = await processarPendentes(supabase);
+    const filaAsaas = await saudeDaFila(supabase);
+    if (filaAsaas.alerta) console.error("[asaas][ALERTA]", filaAsaas.motivo);
+
+    return ok({ ok: true, enviados, recebidos, asaas, fila_asaas: filaAsaas });
   } catch (e) {
     return handleError(e);
   }

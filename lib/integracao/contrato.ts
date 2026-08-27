@@ -138,13 +138,45 @@ export function pagamentosDeReceber(linhas: LinhaReceber[]): PagamentoContrato[]
     }));
 }
 
-/** Receita recorrente mensal — anual e trimestral normalizados para o mês. */
+/**
+ * Quantos meses cada ciclo cobre — o divisor que normaliza tudo para o mês.
+ *
+ * ⚖️ **Por que a tabela cresceu em 28/08/2026.** Até então o cálculo conhecia
+ * três ciclos (`anual`, `trimestral`, e tudo o mais como mensal). Isso bastava
+ * enquanto as assinaturas nasciam só pela tela daqui — medido, as 6 existentes
+ * são todas mensais. A entrada do Asaas muda a premissa: ele emite
+ * `WEEKLY`, `BIWEEKLY`, `BIMONTHLY` e `SEMIANNUALLY` também, e uma assinatura
+ * semestral tratada como mensal **multiplica o MRR por seis**.
+ *
+ * ⛔ O erro não levantaria exceção nenhuma: sairia um número maior, com cara
+ * de certa, num painel que a Dashboard exibe sem recalcular (`RN-01`). É
+ * exatamente a armadilha que o §4.10 do plano descreve.
+ *
+ * Ciclos mais curtos que o mês têm fator menor que 1 de propósito: uma
+ * cobrança semanal de R$ 100 vale ~R$ 433 por mês, não R$ 100.
+ */
+export const MESES_POR_CICLO: Record<string, number> = {
+  semanal: 12 / 52,
+  quinzenal: 12 / 26,
+  mensal: 1,
+  bimestral: 2,
+  trimestral: 3,
+  semestral: 6,
+  anual: 12,
+};
+
+/** Receita recorrente mensal — todo ciclo normalizado para o mês. */
 export function calcularMrr(assinaturas: LinhaAssinatura[]): number {
   return assinaturas
     .filter((a) => a.status === "Ativa")
     .reduce((soma, a) => {
-      const divisor = a.ciclo === "anual" ? 12 : a.ciclo === "trimestral" ? 3 : 1;
-      return soma + num(a.valor) / divisor;
+      // Ciclo que ninguém cadastrou cai em mensal, que é o comportamento
+      // desde sempre. Não é palpite melhor — é o palpite ANTIGO, mantido para
+      // que esta mudança não mexa em nenhum número que já estava certo. O
+      // caminho que evita o palpite é `cicloDoAsaas`, que recusa gravar ciclo
+      // que não reconhece.
+      const meses = MESES_POR_CICLO[a.ciclo] ?? 1;
+      return soma + num(a.valor) / meses;
     }, 0);
 }
 

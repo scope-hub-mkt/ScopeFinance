@@ -107,6 +107,8 @@ class ConsultaFake implements PromiseLike<{ data: unknown; error: unknown; count
   private modo: Modo = "select";
   private carga: Linha | Linha[] | null = null;
   private onConflict: string[] | null = null;
+  /** `on conflict … do nothing` — ver o comentário em `upsert()`. */
+  private ignorarDuplicadas = false;
   private querSelect = false;
   private contagem: "exact" | null = null;
   private soCabecalho = false;
@@ -140,10 +142,28 @@ class ConsultaFake implements PromiseLike<{ data: unknown; error: unknown; count
     return this;
   }
 
-  upsert(carga: Linha | Linha[], opts?: { onConflict?: string }): this {
+  /**
+   * `ignoreDuplicates` traduz o `on conflict … do nothing` do Postgres.
+   *
+   * ⚖️ **Entrou em 28/08/2026, e a ausência dele escondia um teste que não
+   * testava nada.** Sem esta opção o fake sempre sobrescrevia e sempre
+   * devolvia a linha, então `data.length > 0` — o jeito de saber se o
+   * `insert` de fato aconteceu — dava `true` inclusive na reentrega. Um teste
+   * de idempotência escrito contra esse fake passaria com um código que
+   * reprocessa toda entrega repetida, que é justamente a receita contada
+   * duas vezes que o `RN-AS-02` existe para impedir.
+   *
+   * ⚠️ O gêmeo deste arquivo na Scope Dashboard não tem esta correção. Quem
+   * precisar de `ignoreDuplicates` lá, porte daqui.
+   */
+  upsert(
+    carga: Linha | Linha[],
+    opts?: { onConflict?: string; ignoreDuplicates?: boolean }
+  ): this {
     this.modo = "upsert";
     this.carga = carga;
     this.onConflict = opts?.onConflict ? opts.onConflict.split(",").map((s) => s.trim()) : null;
+    this.ignorarDuplicadas = opts?.ignoreDuplicates === true;
     return this;
   }
 
@@ -337,6 +357,10 @@ class ConsultaFake implements PromiseLike<{ data: unknown; error: unknown; count
           ? this.banco.tabela(this.nome).find((l) => chave.every((c) => l[c] === e[c]))
           : undefined;
         if (alvo) {
+          // `do nothing`: a linha existente fica intacta E fica FORA do
+          // retorno — é assim que o PostgREST responde, e é o que permite a
+          // quem chamou distinguir "gravei agora" de "já existia".
+          if (this.ignorarDuplicadas) continue;
           Object.assign(alvo, e);
           resultado.push(alvo);
         } else {

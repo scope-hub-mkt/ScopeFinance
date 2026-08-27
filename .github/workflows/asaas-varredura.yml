@@ -1,0 +1,75 @@
+# Varredura da caixa de entrada do Asaas — §4.5 e §4.9 do plano.
+#
+# ⚖️ **Por que este workflow existe, e por que não é um cron da Vercel.**
+# O plano Hobby entrega cron **uma vez por dia**, e o §4.5 é explícito: diário
+# é rede de segurança aceitável, **não** é caminho principal para pagamento.
+# O projeto também já usa os 2 crons que o plano permite. O GitHub Actions dá
+# granularidade de minutos, custa nada, e já é onde o CI deste repositório
+# roda — nenhuma peça de infraestrutura nova.
+#
+# As três camadas, da mais rápida para a mais lenta:
+#   1. `after()` na própria rota do webhook   — segundos
+#   2. **este workflow**                      — 15 min
+#   3. `/api/cron/integracao` na Vercel       — diário
+#
+# Cada uma existe porque as outras falham de um jeito diferente. A primeira
+# morre se a instância serverless for encerrada no meio; a segunda depende do
+# GitHub estar de pé; a terceira é o que sobra.
+#
+# ⛔ **Nenhuma credencial está escrita aqui.** O workflow lê o segredo
+# `CRON_SECRET`, e falha dizendo isso em vez de sair verde tendo chamado nada.
+
+name: Varredura Asaas
+
+on:
+  schedule:
+    # A cada 15 minutos. O GitHub não garante pontualidade em minuto cheio e
+    # pode atrasar sob carga — o que é aceitável: isto é rede de segurança,
+    # não o caminho principal. Atraso adia o reprocessamento; não o perde.
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+# Uma varredura por vez. Duas concorrentes processariam o mesmo evento em
+# paralelo — e, embora o handler seja idempotente, gastar duas execuções para
+# fazer o trabalho de uma não tem ganho nenhum.
+concurrency:
+  group: asaas-varredura
+  cancel-in-progress: false
+
+jobs:
+  varrer:
+    name: reprocessa pendentes e mede o silêncio
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Conferir o segredo antes de chamar
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::error title=Segredo ausente::CRON_SECRET não está configurado neste repositório."
+            echo "Configure em Settings → Secrets and variables → Actions com o MESMO valor da Vercel."
+            exit 1
+          fi
+
+      - name: Varrer a caixa de entrada
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          RESP=$(curl -fsS --max-time 120 \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "https://scopefinance-chi.vercel.app/api/cron/asaas")
+          echo "$RESP"
+
+          # ⚠️ O alerta do §4.9 vira falha do workflow de propósito. A
+          # integração morrer em silêncio é o modo de falha que este projeto
+          # já pagou duas vezes para aprender: os eventos continuam sendo
+          # gerados, nada chega, e nenhuma tela fica vermelha. Um workflow
+          # vermelho manda e-mail sozinho — que é a única coisa aqui que
+          # alcança alguém sem depender de alguém lembrar de olhar.
+          if echo "$RESP" | grep -q '"alerta":true'; then
+            echo "::error title=Fila do Asaas em silêncio::$RESP"
+            exit 1
+          fi
