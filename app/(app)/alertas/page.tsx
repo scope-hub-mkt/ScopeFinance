@@ -31,9 +31,12 @@ export default async function AlertasPage() {
       .from("asaas_alertas")
       .select("*")
       .is("resolvido_em", null)
-      // `critico` < `atencao` em ordem alfabética — a ordenação natural já
-      // coloca o que para a operação no topo.
-      .order("severidade", { ascending: true })
+      // ⚠️ **`descending`, e isto foi medido errando.** O comentário anterior
+      // afirmava que `critico` vinha antes de `atencao` em ordem alfabética —
+      // vem DEPOIS (`a` < `c`), e a fila subiu com o chargeback embaixo do
+      // aviso de chave expirando. Ordenação errada não quebra nada: só põe o
+      // urgente fora de vista, que é o oposto do motivo de a fila existir.
+      .order("severidade", { ascending: false })
       .order("criado_em", { ascending: true })
       .limit(500),
     supabase.from("clientes").select("id, nome").limit(2000),

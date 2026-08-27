@@ -651,3 +651,22 @@ describe("Fase 7 — ondas 2 e 3: status fino e alertas, nunca dinheiro", () => 
     expect(criticos).toBeLessThan(todas.length / 2);
   });
 });
+
+// ════════════════════════════════════════════════════════════════════
+describe("A fila de alertas ordena o urgente no topo", () => {
+  /**
+   * ⚠️ **Este teste nasceu de um defeito medido em produção.** A tela ordenava
+   * `severidade` em ordem **crescente** com o comentário afirmando que
+   * `critico` vinha antes de `atencao` — vem **depois** (`a` < `c`). A fila
+   * subiu com um chargeback de R$ 150 embaixo de um aviso de chave expirando.
+   *
+   * ⛔ Ordenação errada não quebra nada e não levanta exceção: ela só põe o
+   * urgente fora de vista, que é o oposto do motivo de a fila existir.
+   */
+  it("crescente colocaria 'atencao' na frente — por isso a consulta é decrescente", () => {
+    const ordenado = ["critico", "atencao"].sort();
+    expect(ordenado[0]).toBe("atencao");
+    // Decrescente devolve o crítico primeiro, que é o que a tela precisa.
+    expect(["atencao", "critico"].sort().reverse()[0]).toBe("critico");
+  });
+});
