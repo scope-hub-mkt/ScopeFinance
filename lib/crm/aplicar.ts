@@ -1,6 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { clienteDoCrm, ehGatilho, type PayloadCrm } from "./contrato";
+import { enfileirarEvento } from "../integracao/sincronia";
 
 /**
  * O que a entrada do CRM escreve no ScopeFinance — §2.3, §3.4 e §3.5 do plano.
@@ -135,6 +136,7 @@ async function decidir(supabase: SupabaseClient, p: PayloadCrm): Promise<Resulta
     }
     const { error } = await supabase.from("clientes").update(linha).eq("id", alvo.id);
     if (error) return { estado: "erro", motivo: error.message };
+    await replicarParaDashboard(supabase, alvo.id, linha, "cliente.atualizado");
     return {
       estado: "aplicado",
       acao: "atualizado",
@@ -167,6 +169,7 @@ async function decidir(supabase: SupabaseClient, p: PayloadCrm): Promise<Resulta
         .update({ ...linha, status_cadastro: "efetivo" })
         .eq("id", alvo.id);
       if (error) return { estado: "erro", motivo: error.message };
+      await replicarParaDashboard(supabase, alvo.id, linha, "cliente.atualizado");
       return {
         estado: "aplicado",
         acao: "atualizado",
@@ -196,12 +199,59 @@ async function decidir(supabase: SupabaseClient, p: PayloadCrm): Promise<Resulta
     return { estado: "erro", motivo: error.message };
   }
 
+  const novoId = (criado as { id: string }).id;
+  await replicarParaDashboard(supabase, novoId, linha, "cliente.criado");
+
   return {
     estado: "aplicado",
     acao: "criado",
-    cliente_id: (criado as { id: string }).id,
+    cliente_id: novoId,
     status_cadastro: String(linha.status_cadastro),
   };
+}
+
+/**
+ * Empurra o cliente nascido no CRM para a Dashboard.
+ *
+ * ⚠️ **Isto faltava, e a validação ponta a ponta foi o que achou.** A rota
+ * criava o cliente no Finance e **parava ali**: nenhum teste de unidade
+ * percebia, porque cada lado estava certo isoladamente. A topologia do §1 é
+ * `CRM → Finance → Dashboard`, e o segundo salto simplesmente não acontecia —
+ * o comercial cadastrava o contrato e o cliente nunca aparecia no painel.
+ *
+ * ⚖️ **É a mesma outbox que o CRUD da tela já usa** (`app/api/[resource]`),
+ * não um caminho novo: grava a linha e deixa a entrega para depois, com as 5
+ * tentativas. Um destino fora do ar não pode travar a criação do cliente.
+ *
+ * ⛔ **Nunca lança.** Falha de replicação não pode desfazer um cliente que já
+ * existe aqui — o evento fica na fila e o cron entrega. Perder o cadastro por
+ * causa da rede seria trocar um atraso por uma perda.
+ *
+ * ⚠️ **Supressão de eco:** só replica o que nasceu do CRM ou daqui. Cliente
+ * com `origem = 'dashboard'` veio de lá, e reemitir faria o cadastro ir e
+ * voltar para sempre (`ESTADO §8.5`).
+ */
+async function replicarParaDashboard(
+  supabase: SupabaseClient,
+  clienteId: string,
+  linha: Record<string, unknown>,
+  tipo: "cliente.criado" | "cliente.atualizado"
+): Promise<void> {
+  if (linha.origem === "dashboard") return;
+  try {
+    await enfileirarEvento(supabase, tipo, {
+      cliente_id: clienteId,
+      nome: linha.nome,
+      // A Dashboard lê `doc`; a trigger do banco o mantém em sincronia com
+      // `documento_principal`, e é ele que viaja.
+      doc: (linha.cnpj ?? linha.cpf ?? null) as string | null,
+      email: linha.email ?? null,
+      tel: linha.tel ?? null,
+      fonte: "scopefinance",
+    });
+  } catch {
+    // A outbox é a rede de segurança; o cron entrega o que ficou.
+  }
 }
 
 async function colidente(
