@@ -60,6 +60,7 @@ function banco() {
       assinaturas: [],
       notas_fiscais: [],
       asaas_webhook_events: [],
+      asaas_alertas: [],
     },
     {
       asaas_webhook_events: {
@@ -77,6 +78,15 @@ function banco() {
       notas_fiscais: {
         unicos: [{ colunas: ["asaas_invoice_id"], onde: (l) => l.asaas_invoice_id != null }],
         defaults: { id: () => crypto.randomUUID(), status: "Pendente" },
+      },
+      asaas_alertas: {
+        // ⛔ Um evento gera UM alerta. A restrição existe no banco
+        // (`ux_asaas_alertas_evento`) e precisa existir aqui: sem ela, o teste
+        // de reentrega passaria com um código que enfileira o mesmo chargeback
+        // três vezes — e ninguém saberia se são três disputas ou uma
+        // reprocessada.
+        unicos: [{ colunas: ["evento_id"], nome: "ux_asaas_alertas_evento" }],
+        defaults: { id: () => crypto.randomUUID(), criado_em: () => new Date().toISOString() },
       },
     }
   );
@@ -524,5 +534,120 @@ describe("§4.10 dentro de casa — a soma do resumo também é dinheiro", () =>
     // 12/52 avos é dízima; sem centavo inteiro o total viria com cauda.
     const mrr = calcularMrr([{ ciclo: "semanal", valor: 100, status: "Ativa" }]);
     expect(Number.isInteger(Math.round(mrr * 100))).toBe(true);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════
+describe("Fase 7 — ondas 2 e 3: status fino e alertas, nunca dinheiro", () => {
+  const COBRANCA_EXISTENTE = {
+    id: "cr-1",
+    asaas_payment_id: "pay_080225913252",
+    cliente_id: CLIENTE,
+    status: "Pendente",
+    asaas_status: "PENDING",
+    valor: "150.00",
+    valor_contratado: "150.00",
+    valor_pago: null,
+    deducoes: "0.00",
+  };
+
+  function bancoComCobranca() {
+    const b = banco();
+    b.tabela("contas_receber").push({ ...COBRANCA_EXISTENTE });
+    return b;
+  }
+
+  async function entregar(event: string, objeto: Record<string, unknown>, id = `evt_${event}`) {
+    const env = lerEnvelope(evento(event, objeto, id));
+    if (!env.ok) throw new Error("envelope");
+    await registrarEvento(fakeAtual() as never, env.envelope);
+    return processarEvento(fakeAtual() as never, env.envelope);
+  }
+
+  it("chargeback abre alerta CRÍTICO e não encosta no dinheiro", async () => {
+    bancoComCobranca();
+    const d = await entregar("PAYMENT_CHARGEBACK_REQUESTED", {
+      ...COBRANCA,
+      status: "CHARGEBACK_REQUESTED",
+    });
+    expect(d.estado).toBe("done");
+
+    const a = fakeAtual().tabela("asaas_alertas")[0];
+    expect(a.severidade).toBe("critico");
+    expect(a.categoria).toBe("cobranca");
+    expect(a.valor).toBe("150.00");
+    expect(a.cliente_id).toBe(CLIENTE);
+
+    // ⛔ A regra que separa onda 1 de onda 2: o status FINO é espelhado, o
+    // status de domínio não muda, e nenhum valor é tocado. Um evento de
+    // "disputa aberta" que mexesse na receita daria um número durante a
+    // disputa e outro depois — e nenhum dos dois seria a verdade.
+    const c = fakeAtual().tabela("contas_receber")[0];
+    expect(c.asaas_status).toBe("CHARGEBACK_REQUESTED");
+    expect(c.status).toBe("Pendente");
+    expect(c.valor).toBe("150.00");
+    expect(c.valor_pago).toBeNull();
+    expect(c.deducoes).toBe("0.00");
+  });
+
+  it("o mesmo evento reentregue não duplica o alerta", async () => {
+    bancoComCobranca();
+    await entregar("PAYMENT_CHARGEBACK_REQUESTED", COBRANCA, "evt_dup");
+    // A varredura reprocessa o mesmo evento — é o caminho real do §4.5.
+    const env = lerEnvelope(evento("PAYMENT_CHARGEBACK_REQUESTED", COBRANCA, "evt_dup"));
+    if (!env.ok) throw new Error("envelope");
+    await processarEvento(fakeAtual() as never, env.envelope);
+
+    // Sem o índice único, o mesmo chargeback apareceria duas vezes na fila e
+    // ninguém saberia se são duas disputas ou uma reprocessada.
+    expect(fakeAtual().tabela("asaas_alertas")).toHaveLength(1);
+  });
+
+  it("evento de conta e de chave de API viram alerta, com a categoria certa", async () => {
+    banco();
+    await entregar("ACCOUNT_STATUS_GENERAL_APPROVAL_REJECTED", {}, "evt_conta");
+    await entregar("ACCESS_TOKEN_EXPIRED", {}, "evt_token");
+
+    const alertas = fakeAtual().tabela("asaas_alertas");
+    expect(alertas).toHaveLength(2);
+    expect(alertas.map((a) => a.categoria).sort()).toEqual(["conta", "seguranca"]);
+    // Os dois param a operação — por isso críticos.
+    expect(alertas.every((a) => a.severidade === "critico")).toBe(true);
+  });
+
+  it("⛔ telemetria NÃO vira alerta — fila cheia de ruído é fila que ninguém lê", async () => {
+    bancoComCobranca();
+    const d = await entregar("PAYMENT_BANK_SLIP_VIEWED", COBRANCA);
+    expect(d.estado).toBe("done");
+    // O boleto visto espelha o status e para aí.
+    expect(fakeAtual().tabela("asaas_alertas")).toHaveLength(0);
+  });
+
+  it("⛔ split NÃO vira alerta — a Scope não usa split", async () => {
+    banco();
+    const d = await entregar("PAYMENT_SPLIT_DONE", { id: "pay_x" });
+    expect(d.estado).toBe("ignored");
+    expect(fakeAtual().tabela("asaas_alertas")).toHaveLength(0);
+  });
+
+  it("todo evento P1/P2 com regra tem categoria e severidade válidas", async () => {
+    const { REGRAS } = await import("@/lib/asaas/alertas");
+    for (const [ev, r] of Object.entries(REGRAS)) {
+      expect(["cobranca", "fiscal", "conta", "seguranca"], ev).toContain(r.categoria);
+      expect(["critico", "atencao"], ev).toContain(r.severidade);
+      // ⛔ Nenhum P0 pode estar aqui: eles mexem em dinheiro, e esta lista é a
+      // dos que NÃO mexem.
+      expect(EVENTOS_P0, ev).not.toContain(ev);
+      // E todo evento com regra tem de existir no catálogo — regra para
+      // evento inventado nunca dispararia, e ninguém notaria.
+      expect(CATALOGO[ev], ev).toBeDefined();
+    }
+  });
+
+  it("crítico é minoria — uma fila em que tudo é crítico não tem prioridade", async () => {
+    const { REGRAS } = await import("@/lib/asaas/alertas");
+    const todas = Object.values(REGRAS);
+    const criticos = todas.filter((r) => r.severidade === "critico").length;
+    expect(criticos).toBeLessThan(todas.length / 2);
   });
 });

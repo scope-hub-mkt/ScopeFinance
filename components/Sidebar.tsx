@@ -67,7 +67,12 @@ const NAV: { g: string; items: { href: string; icon: string; l: string }[] }[] =
   },
   {
     g: "Sistema",
-    items: [{ href: "/integracao", icon: "ti-plug-connected", l: "Integração" }],
+    items: [
+      { href: "/integracao", icon: "ti-plug-connected", l: "Integração" },
+      // Fase 7: a fila dos eventos P1/P2 do gateway que pedem um humano.
+      // Sem tela, a única forma de descobrir um chargeback seria um `select`.
+      { href: "/alertas", icon: "ti-bell-exclamation", l: "Alertas do Asaas" },
+    ],
   },
 ];
 

@@ -7,6 +7,7 @@ import {
   linhaDaCobranca,
   linhaDaNota,
 } from "./mapear";
+import { alertaDoEvento } from "./alertas";
 
 // Reexportados porque a suíte e o backfill os leem daqui desde a primeira
 // versão. O lugar onde eles MORAM é `mapear.ts` — puro, e único.
@@ -134,10 +135,20 @@ async function despachar(supabase: SupabaseClient, env: EnvelopeAsaas): Promise<
     return { estado: "ignored", motivo: `evento "${env.event}" não está no catálogo` };
   }
 
-  // Ondas 2 e 3 (§4.8): gravadas desde o dia 1, processadas depois. Dizer
-  // "ignored" aqui é honesto — o dado está guardado e a regra ainda não existe.
+  // ─── Ondas 2 e 3 (§4.8) — Fase 7 ────────────────────────────────────
+  //
+  // ⚖️ Até 28/08/2026 estes 54 eventos eram gravados e marcados `ignored`: o
+  // dado guardado, a regra inexistente. Isso era honesto enquanto a regra não
+  // existia — mas metade deles não é telemetria, é **pedido de atenção**.
+  //
+  // ⛔ **Nenhum deles mexe em dinheiro**, e isso é regra, não omissão. Eles
+  // não baixam conta, não alteram valor e não mudam `status` — isso é dos P0.
+  // Um evento de "disputa aberta" que mexesse na receita produziria um número
+  // durante a disputa e outro depois dela, e nenhum dos dois seria a verdade.
+  // O que eles fazem é **espelhar o status fino do gateway** e, quando pedem
+  // um humano, **abrir alerta**.
   if (def.prioridade !== "P0") {
-    return { estado: "ignored", motivo: `prioridade ${def.prioridade} — gravado, ainda sem regra` };
+    return aplicarOndaDois(supabase, env, def.prioridade);
   }
 
   if (!env.objeto) {
@@ -156,6 +167,69 @@ async function despachar(supabase: SupabaseClient, env: EnvelopeAsaas): Promise<
     default:
       return { estado: "ignored", motivo: `entidade ${def.entidade} não altera dado financeiro` };
   }
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  Ondas 2 e 3 — status fino e alertas, nunca dinheiro
+// ════════════════════════════════════════════════════════════════════
+
+async function aplicarOndaDois(
+  supabase: SupabaseClient,
+  env: EnvelopeAsaas,
+  prioridade: string
+): Promise<Desfecho> {
+  const o = env.objeto;
+  const feitos: string[] = [];
+
+  // 1. O status fino do gateway, espelhado onde ninguém o soma.
+  //
+  // ⚖️ `asaas_status` existe exatamente para isto: guardar o vocabulário do
+  // Asaas sem contaminar `status`, que é o que `lib/integracao/contrato.ts`
+  // usa para calcular faturamento, recebido e inadimplência. Um valor novo
+  // naquela coluna mudaria três indicadores em silêncio.
+  if (env.entity_type === "payment" && env.entity_id && typeof o?.status === "string") {
+    const { error } = await supabase
+      .from("contas_receber")
+      .update({ asaas_status: o.status })
+      .eq("asaas_payment_id", env.entity_id);
+    if (!error) feitos.push(`asaas_status=${o.status}`);
+  }
+
+  // 2. O alerta, quando o evento pede um humano.
+  const alerta = alertaDoEvento(env.event, o);
+  if (alerta) {
+    const clienteId = await resolverCliente(supabase, o?.customer);
+    const { error } = await supabase.from("asaas_alertas").insert({
+      evento_id: env.id,
+      event_type: env.event,
+      categoria: alerta.categoria,
+      severidade: alerta.severidade,
+      titulo: alerta.titulo,
+      detalhe: alerta.detalhe,
+      entity_type: env.entity_type,
+      entity_id: env.entity_id,
+      cliente_id: clienteId,
+      valor: alerta.valor,
+    });
+
+    // 23505 = já existe alerta para este evento. Não é falha: é a entrega
+    // `at least once` do `RN-AS-02` ou a varredura reprocessando. Sem o índice
+    // único, o mesmo chargeback apareceria três vezes na fila e ninguém saberia
+    // se são três disputas ou uma reprocessada.
+    if (error && error.code !== "23505") {
+      return { estado: "failed", motivo: `alerta não gravado: ${error.message}` };
+    }
+    feitos.push(error ? "alerta já existia" : `alerta ${alerta.severidade}`);
+  }
+
+  if (feitos.length === 0) {
+    // Telemetria e split — a Scope não usa split, e "alguém abriu o boleto"
+    // não é fila. Gravado e sem tela é o tratamento certo: abrir alerta para
+    // isso treinaria o time a fechar a fila sem ler.
+    return { estado: "ignored", motivo: `${prioridade} sem efeito — telemetria, gravado` };
+  }
+
+  return { estado: "done", detalhe: feitos.join(" · ") };
 }
 
 // ════════════════════════════════════════════════════════════════════

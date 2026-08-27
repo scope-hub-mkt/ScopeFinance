@@ -72,10 +72,30 @@ export function BotaoTema() {
  */
 const CLASSE_BADGE: Record<string, string> = {
   ativo: "bdg-g", ativa: "bdg-g", pago: "bdg-g", paga: "bdg-g", emitida: "bdg-g",
+  efetivo: "bdg-g",
   inativo: "bdg-x", inativa: "bdg-x", cancelado: "bdg-x", cancelada: "bdg-x", encerrado: "bdg-x",
   pendente: "bdg-a", prospect: "bdg-a", "em negociação": "bdg-a", suspensa: "bdg-a",
   pausado: "bdg-a", agendada: "bdg-a",
   vencido: "bdg-r", inadimplente: "bdg-r", erro: "bdg-r",
+
+  // ── Vocabulário que entrou com a integração de 28/08/2026 ──────────
+  //
+  // ⚠️ **Sem estas linhas, cada um destes cairia no `bdg-x` cinza** — a cor de
+  // "inativo". Um alerta CRÍTICO pintado de cinza é pior que um sem cor: ele
+  // afirma, com a autoridade do sistema de design, que não é urgente. É
+  // exatamente o defeito que o comentário acima descreve, um passo adiante.
+  critico: "bdg-r",
+  atencao: "bdg-a",
+  em_conflito: "bdg-r",
+  "em conflito": "bdg-r",
+  provisorio: "bdg-a",
+
+  // ⚖️ Os três tipos de venda e as quatro origens são **classificação, não
+  // estado** — nada aqui é bom nem ruim. Por isso todos em `bdg-x`, que é o
+  // neutro: pintar "assinatura" de verde sugeriria que ela é melhor que uma
+  // avulsa, e cor que carrega juízo onde não há é ruído (Lei 4).
+  avulsa: "bdg-x", contrato: "bdg-x", assinatura: "bdg-x",
+  crm: "bdg-x", asaas: "bdg-x", dashboard: "bdg-x", scopefinance: "bdg-x",
 };
 
 /** Exportada para teste: a escolha de cor é regra, e regra se prova. */
