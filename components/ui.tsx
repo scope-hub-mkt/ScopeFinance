@@ -1,18 +1,94 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { lerDelta, pctDelta } from "@/lib/kpi";
 
-// ─── BADGE ──────────────────────────────────────────────────────────
-const badgeClass: Record<string, string> = {
-  Ativo: "bdg-g", Ativa: "bdg-g", Pago: "bdg-g", Emitida: "bdg-g",
-  Inativo: "bdg-x", Inativa: "bdg-x", Cancelado: "bdg-x", Cancelada: "bdg-x", Encerrado: "bdg-x",
-  Pendente: "bdg-a", Prospect: "bdg-a", "Em negociação": "bdg-a", Suspensa: "bdg-a",
-  Pausado: "bdg-a", Agendada: "bdg-a",
-  Vencido: "bdg-r", Inadimplente: "bdg-r", Erro: "bdg-r",
+// ─── TEMA ───────────────────────────────────────────────────────────
+/**
+ * Alternador de tema claro/escuro — Onda 3.
+ *
+ * ⚖️ **Por que existe um botão, se a Onda 3 diz "nenhum componente lê o
+ * tema".** A regra veda componente de CONTEÚDO ramificando em tema: tile que
+ * escolhe cor por `if (tema === 'escuro')` é a porta de entrada de um segundo
+ * sistema de design. Este botão não lê tema para decidir aparência — ele lê
+ * para saber que ícone mostrar, e escreve o atributo. Sem ele o claro entra
+ * como padrão e o escuro fica inalcançável para quem tem o sistema no claro,
+ * o que seria descartar identidade que já roda, exatamente o que §8 proíbe.
+ *
+ * A chave `scope-tema` é a MESMA da Dashboard, de propósito: os dois sistemas
+ * são pares (`D-44`) e a preferência é da pessoa, não do sistema.
+ *
+ * O estado começa `null` e só é lido depois de montar, porque no servidor o
+ * `data-tema` ainda não existe — quem o escreve é o script inline do
+ * `layout.tsx`, antes da primeira pintura.
+ */
+export function BotaoTema() {
+  const [tema, setTema] = useState<"claro" | "escuro" | null>(null);
+
+  useEffect(() => {
+    const atual = document.documentElement.dataset.tema as "claro" | "escuro" | undefined;
+    setTema(
+      atual ?? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "escuro" : "claro")
+    );
+  }, []);
+
+  const alternar = () => {
+    const novo = tema === "escuro" ? "claro" : "escuro";
+    document.documentElement.dataset.tema = novo;
+    try {
+      localStorage.setItem("scope-tema", novo);
+    } catch {
+      /* modo privado: a escolha vale só nesta sessão */
+    }
+    setTema(novo);
+  };
+
+  const rotulo = tema === "escuro" ? "Usar tema claro" : "Usar tema escuro";
+
+  return (
+    <button
+      className="btn btn-sm btn-block"
+      onClick={alternar}
+      title={rotulo}
+      aria-label={rotulo}
+      type="button"
+    >
+      <i className={`ti ${tema === "escuro" ? "ti-sun" : "ti-moon"}`} /> {rotulo}
+    </button>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   BADGE — Onda 6, convergência com a assinatura da Dashboard
+   ═══════════════════════════════════════════════════════════════════ */
+
+/**
+ * ⚠️ **As chaves são minúsculas de propósito.** A versão anterior indexava
+ * por capitalização exata (`Ativo`, `Em negociação`), então um status vindo
+ * do banco com outra caixa — ou do Asaas, que devolve `PENDING` — caía no
+ * `bdg-x` cinza em silêncio, e um estado CRÍTICO passava a parecer neutro.
+ * ⛔ Este é o tipo de defeito que nunca quebra teste: a pílula aparece, só
+ * que com a cor errada.
+ */
+const CLASSE_BADGE: Record<string, string> = {
+  ativo: "bdg-g", ativa: "bdg-g", pago: "bdg-g", paga: "bdg-g", emitida: "bdg-g",
+  inativo: "bdg-x", inativa: "bdg-x", cancelado: "bdg-x", cancelada: "bdg-x", encerrado: "bdg-x",
+  pendente: "bdg-a", prospect: "bdg-a", "em negociação": "bdg-a", suspensa: "bdg-a",
+  pausado: "bdg-a", agendada: "bdg-a",
+  vencido: "bdg-r", inadimplente: "bdg-r", erro: "bdg-r",
 };
 
-export function Badge({ s }: { s: string }) {
-  return <span className={`bdg ${badgeClass[s] || "bdg-x"}`}>{s}</span>;
+/** Exportada para teste: a escolha de cor é regra, e regra se prova. */
+export function classeBadge(s: string): string {
+  return CLASSE_BADGE[String(s ?? "").toLowerCase()] ?? "bdg-x";
+}
+
+export function Badge({ s, titulo }: { s: string; titulo?: string }) {
+  return (
+    <span className={`bdg ${classeBadge(s)}`} title={titulo}>
+      {s}
+    </span>
+  );
 }
 
 // ─── MODAL ──────────────────────────────────────────────────────────
@@ -20,10 +96,12 @@ export function Modal({
   title,
   onClose,
   children,
+  largo,
 }: {
   title: string;
   onClose: () => void;
   children: React.ReactNode;
+  largo?: boolean;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -37,8 +115,11 @@ export function Modal({
       onClick={(e) => {
         if ((e.target as HTMLElement).className === "mover") onClose();
       }}
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
     >
-      <div className="mbox">
+      <div className={`mbox${largo ? " mbox-lg" : ""}`}>
         <div className="mtitle">{title}</div>
         {children}
       </div>
@@ -50,16 +131,20 @@ export function Modal({
 export function Field({
   label,
   span,
+  ajuda,
   children,
 }: {
   label: string;
   span?: boolean;
+  /** Texto de apoio sob o campo — onde a regra de negócio vira instrução. */
+  ajuda?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <div className={`fg${span ? " span2" : ""}`}>
       <label>{label}</label>
       {children}
+      {ajuda && <div className="ajuda">{ajuda}</div>}
     </div>
   );
 }
@@ -74,27 +159,190 @@ export function PageHeader({
 }) {
   return (
     <div className="ph">
-      <div className="pt">
-        <span>⬡ </span>
-        {title}
-      </div>
+      {/* B-5: o ⬡ saiu daqui em 26/08/2026. Emoji e glifo decorativo em texto
+          de interface e proibido pelo sistema de design da Scope — os
+          marcadores de status seguem permitidos, porque sao vocabulario
+          documentado, mas ornamento antes de titulo nao e vocabulario.
+          B-4, no mesmo passo: `.pt span` perdeu a cor. Hierarquia e tamanho e
+          peso, nunca cor (Lei 4) — titulo colorido nao existe em nenhuma das
+          cinco referencias medidas. */}
+      <div className="pt">{title}</div>
       {children && <div className="hgap">{children}</div>}
     </div>
   );
 }
 
-// ─── METRICS ────────────────────────────────────────────────────────
-export function MetricGrid({
-  items,
-}: {
-  items: { l: string; v: React.ReactNode; c?: string }[];
-}) {
+// ─── DELTA E TILE DE KPI ────────────────────────────────────────────
+export interface DadoDelta {
+  /** Variação percentual. O sinal define a direção exibida. */
+  valor: number;
+  /** Período nomeado — "vs mês anterior". Delta sem período não diz nada. */
+  periodo: string;
+  /**
+   * `false` inverte a leitura de cor. Existe por causa de despesa e
+   * inadimplência: lá subir é ruim, e pintar de verde seria mentir com
+   * estilo.
+   */
+  bomQuandoSobe?: boolean;
+}
+
+export function Delta({ valor, periodo, bomQuandoSobe = true }: DadoDelta) {
+  const { classe, icone, sinal } = lerDelta(valor, bomQuandoSobe);
+  return (
+    <div>
+      <span className={`delta ${classe}`}>
+        <i className={`ti ${icone}`} aria-hidden="true" />
+        {sinal}
+        {pctDelta(valor)}%
+      </span>
+      <span className="delta-per">{periodo}</span>
+    </div>
+  );
+}
+
+/**
+ * ─── A Lei 2: o tile carrega CINCO camadas, não um número ─────────────────
+ * Onda 4 de `docs/AGENTE-IDENTIDADE-VISUAL.md` §B.4, na Dashboard. `B-7` do
+ * diagnóstico media este componente como *"rótulo + valor 20px, sem delta,
+ * sem forma, sem fonte"* — um número sozinho.
+ *
+ * ⚖️ **`fonte` é obrigatória no TIPO, e essa é a parte que importa.** `RNF-19`
+ * (*todo número declara sua procedência*) nasceu na Dashboard e é ainda mais
+ * defensável num sistema financeiro: *"R$ 128.750 — fonte: contas a receber
+ * pagas"* é a diferença entre um número e um número **auditável**. Deixá-la
+ * opcional transformaria o requisito em sugestão; obrigatória, o compilador
+ * recusa um KPI sem procedência antes de qualquer revisor.
+ *
+ * ⚠️ **`delta` e `forma` são opcionais de propósito, e isto NÃO é a Lei 2 pela
+ * metade.** Delta exige um período anterior medido. Vários KPIs daqui são
+ * saldo em aberto — "a receber", "saldo em conta" — que não têm mês anterior
+ * a comparar; e `forma` espera as onze formas da Onda 5. ⛔ Preencher os dois
+ * com número inventado seria violar o requisito que este componente existe
+ * para servir: um delta falso é pior que delta nenhum, porque parece medição.
+ */
+export interface ItemMetrica {
+  l: string;
+  v: React.ReactNode;
+  c?: string;
+  /** `RNF-19` — de onde saiu o número. Obrigatória. */
+  fonte: string;
+  /** Ícone Tabler, sem o prefixo `ti-`. */
+  icone?: string;
+  delta?: DadoDelta;
+  /** A quarta camada — chega com as formas da Onda 5. */
+  forma?: React.ReactNode;
+}
+
+export function MetricGrid({ items }: { items: ItemMetrica[] }) {
   return (
     <div className="mgrid">
       {items.map((m) => (
         <div className="met" key={m.l}>
-          <div className="met-l">{m.l}</div>
+          <div className="met-topo">
+            <div className="met-l">{m.l}</div>
+            {m.icone && (
+              <span className="met-chip" aria-hidden="true">
+                <i className={`ti ti-${m.icone}`} />
+              </span>
+            )}
+          </div>
+
           <div className={`met-v ${m.c || ""}`}>{m.v}</div>
+
+          {m.delta && <Delta {...m.delta} />}
+          {m.forma && <div className="met-forma">{m.forma}</div>}
+
+          <div className="met-fonte">
+            <i className="ti ti-database" aria-hidden="true" />
+            fonte: {m.fonte}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * ═══ FORMAS — Onda 5 ═══════════════════════════════════════════════
+ *
+ * ⚖️ **O que sai daqui, e por quê.** `B-9` do diagnóstico:
+ * `relatorios/page.tsx` desenhava as barras à mão, com `<div style={…}>`
+ * medindo o dado. Três problemas, e nenhum é estético:
+ *
+ *   1. **Dado desenhado em `style` inline escapa de toda trava.** Largura em
+ *      `%` calculada no JSX não é conferível por `lint:design`, não tem
+ *      estado vazio próprio e não tem como ser reusada.
+ *   2. **A cor era `--marca` chapada.** Laranja da marca não é cor de série:
+ *      é identidade. Série tem slot (`--s1`…`--s8`), e a ordem dos slots é
+ *      mecanismo de segurança para daltonismo, não gosto.
+ *   3. **Não havia estado vazio de verdade** — `Empty` genérico no lugar de
+ *      um vazio que diz o que faltou medir.
+ *
+ * Sem dependência e sem SVG: as barras continuam sendo `div`, mas agora com
+ * classe, token e um primitivo só.
+ */
+
+/**
+ * Slot de série. Ordem FIXA, sem ciclo — a mesma função da Dashboard.
+ * ⛔ Ciclar as cores num nono item faria duas séries diferentes vestirem a
+ * mesma cor, que é o defeito que a ordem fixa existe para impedir.
+ */
+export function serie(i: number): string | undefined {
+  return i >= 0 && i < 8 ? `var(--s${i + 1})` : undefined;
+}
+
+/**
+ * Vazio de gráfico — distinto do `Empty` de tabela de propósito.
+ * Um gráfico sem dado precisa dizer **o que** não havia para medir; "Sem
+ * dados" serve para tudo e por isso não serve para nada.
+ */
+export function GraficoVazio({ motivo }: { motivo: string }) {
+  return (
+    <div className="gr-vazio">
+      <i className="ti ti-chart-dots" aria-hidden="true" />
+      <span>{motivo}</span>
+    </div>
+  );
+}
+
+/**
+ * Barras horizontais — ranque nominal.
+ *
+ * ⚠️ **Nominal ⇒ todas as barras vestem o MESMO slot.** Pintar cada linha de
+ * uma cor diferente sugere categoria onde só existe ordem de grandeza, e
+ * gasta a paleta inteira num gráfico que não precisa dela.
+ */
+export function BarrasH({
+  itens,
+  cor,
+  formatar,
+  vazio = "Sem itens para ranquear",
+  teto = 6,
+}: {
+  itens: { rotulo: string; valor: number }[];
+  cor?: string;
+  formatar: (n: number) => string;
+  vazio?: string;
+  /** Ranque sem teto vira tabela ruim: as 6 primeiras contam a história. */
+  teto?: number;
+}) {
+  if (!itens.length) return <GraficoVazio motivo={vazio} />;
+  const max = Math.max(...itens.map((i) => i.valor), 1);
+  const pintura = cor ?? serie(0)!;
+
+  return (
+    <div className="vgap gr-entra">
+      {itens.slice(0, teto).map((i) => (
+        <div key={i.rotulo}>
+          <div className="row gr-linha">
+            <span className="gr-rotulo" title={i.rotulo}>
+              {i.rotulo}
+            </span>
+            <span className="gr-valor">{formatar(i.valor)}</span>
+          </div>
+          <div className="pbar gr-trilho">
+            <div className="pfill" style={{ width: `${(i.valor / max) * 100}%`, background: pintura }} />
+          </div>
         </div>
       ))}
     </div>
@@ -102,10 +350,15 @@ export function MetricGrid({
 }
 
 // ─── EMPTY / LOADING ────────────────────────────────────────────────
-export function Empty({ children }: { children: React.ReactNode }) {
-  return <div className="empty">{children}</div>;
+export function Empty({ icone, children }: { icone?: string; children: React.ReactNode }) {
+  return (
+    <div className="empty">
+      {icone && <i className={`ti ${icone}`} aria-hidden="true" />}
+      {children}
+    </div>
+  );
 }
 
 export function Spinner() {
-  return <span className="spin" />;
+  return <span className="spin" aria-hidden="true" />;
 }

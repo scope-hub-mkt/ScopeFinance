@@ -59,7 +59,7 @@ export default function LoginPage() {
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={mode === "signup" ? "new-password" : "current-password"} required />
           </div>
           <div className="err">{err}</div>
-          {msg && <div className="tiny" style={{ color: "var(--green)" }}>{msg}</div>}
+          {msg && <div className="tiny" style={{ color: "var(--ok)" }}>{msg}</div>}
           <button className="btn btn-p btn-block" type="submit" disabled={loading}>
             {loading ? "Aguarde..." : mode === "login" ? "Entrar" : "Criar conta"}
           </button>

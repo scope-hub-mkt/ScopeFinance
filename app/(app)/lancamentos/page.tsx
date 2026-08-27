@@ -55,10 +55,17 @@ export default function LancamentosPage() {
         ))}
       </div>
 
+      {/* ⚠️ `ent` e `sai` somam `db.lancamentos` INTEIRO, nao a `list` filtrada
+          pela aba — trocar a aba muda a tabela e nao muda estes tres numeros.
+          A `fonte` diz isso em vez de esconder: mudar o calculo seria decisao
+          de produto, e declarar a divergencia e o que `RNF-19` exige. */}
       <MetricGrid items={[
-        { l: "Entradas", v: fmt(ent), c: "c-green" },
-        { l: "Saídas", v: fmt(sai), c: "c-red" },
-        { l: "Saldo", v: fmt(ent - sai), c: ent - sai >= 0 ? "c-green" : "c-red" },
+        { l: "Entradas", v: fmt(ent), c: "c-green", icone: "arrow-down-circle",
+          fonte: "todos os lancamentos tipo entrada — ignora o filtro da aba" },
+        { l: "Saídas", v: fmt(sai), c: "c-red", icone: "arrow-up-circle",
+          fonte: "todos os lancamentos tipo saida — ignora o filtro da aba" },
+        { l: "Saldo", v: fmt(ent - sai), c: ent - sai >= 0 ? "c-green" : "c-red", icone: "scale",
+          fonte: "entradas menos saidas de todos os lancamentos" },
       ]} />
 
       <div className="card tbl-wrap">
@@ -75,7 +82,7 @@ export default function LancamentosPage() {
                 <td>{l.descricao}{l.origem !== "manual" && <span className="tiny"> · auto</span>}</td>
                 <td><span className="bdg bdg-x">{l.categoria || "—"}</span></td>
                 <td className="tiny">{getBN(l.conta_id)}</td>
-                <td style={{ fontWeight: 500, color: `var(${l.tipo === "entrada" ? "--green" : "--red"})` }}>
+                <td style={{ fontWeight: 500, color: `var(${l.tipo === "entrada" ? "--ok" : "--critico"})` }}>
                   {l.tipo === "entrada" ? "+" : "-"}{fmt(l.valor)}
                 </td>
                 <td>

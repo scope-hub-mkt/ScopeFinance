@@ -59,9 +59,12 @@ export default function PagarPage() {
       </div>
 
       <MetricGrid items={[
-        { l: "Total", v: fmt(tot) },
-        { l: "Pago", v: fmt(pg), c: "c-green" },
-        { l: "Pendente", v: fmt(pd), c: "c-orange" },
+        { l: "Total", v: fmt(tot), icone: "receipt",
+          fonte: "contas a pagar no filtro da aba atual" },
+        { l: "Pago", v: fmt(pg), c: "c-green", icone: "circle-check",
+          fonte: "contas a pagar com status Pago, no filtro atual" },
+        { l: "Pendente", v: fmt(pd), c: "c-orange", icone: "clock",
+          fonte: "contas a pagar com status Pendente, no filtro atual" },
       ]} />
 
       <div className="card tbl-wrap">
@@ -78,7 +81,7 @@ export default function PagarPage() {
                   <td>{r.fornecedor}{r.assinatura_id && <span className="tiny"> · assinatura</span>}</td>
                   <td>{r.descricao}</td>
                   <td className="c-red" style={{ fontWeight: 500 }}>{fmt(r.valor)}</td>
-                  <td className="tiny" style={venc ? { color: "var(--red)" } : {}}>{fmtDate(r.vencimento)}</td>
+                  <td className="tiny" style={venc ? { color: "var(--critico)" } : {}}>{fmtDate(r.vencimento)}</td>
                   <td><span className="bdg bdg-x">{r.categoria || "—"}</span></td>
                   <td><Badge s={r.status} /></td>
                   <td>

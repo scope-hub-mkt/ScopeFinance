@@ -60,9 +60,12 @@ export default function ReceberPage() {
       </div>
 
       <MetricGrid items={[
-        { l: "Total", v: fmt(tot) },
-        { l: "Recebido", v: fmt(pg), c: "c-green" },
-        { l: "Pendente", v: fmt(pd), c: "c-orange" },
+        { l: "Total", v: fmt(tot), icone: "receipt",
+          fonte: "contas a receber no filtro da aba atual" },
+        { l: "Recebido", v: fmt(pg), c: "c-green", icone: "circle-check",
+          fonte: "contas a receber com status Pago, no filtro atual" },
+        { l: "Pendente", v: fmt(pd), c: "c-orange", icone: "clock",
+          fonte: "contas a receber com status Pendente, no filtro atual" },
       ]} />
 
       <div className="card tbl-wrap">
@@ -79,7 +82,7 @@ export default function ReceberPage() {
                   <td>{getCN(r.cliente_id)}{r.assinatura_id && <span className="tiny"> · assinatura</span>}</td>
                   <td>{r.descricao}</td>
                   <td className="c-green" style={{ fontWeight: 500 }}>{fmt(r.valor)}</td>
-                  <td className="tiny" style={venc ? { color: "var(--red)" } : {}}>{fmtDate(r.vencimento)}</td>
+                  <td className="tiny" style={venc ? { color: "var(--critico)" } : {}}>{fmtDate(r.vencimento)}</td>
                   <td><Badge s={r.status} /></td>
                   <td>
                     <div className="actions">

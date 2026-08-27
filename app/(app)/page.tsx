@@ -1,7 +1,7 @@
 "use client";
 
 import { useStore } from "@/lib/store";
-import { MetricGrid, Empty } from "@/components/ui";
+import { MetricGrid, Empty, type ItemMetrica } from "@/components/ui";
 import { fmt, fmtDate, today, monthlyValue } from "@/lib/format";
 
 export default function DashboardPage() {
@@ -17,15 +17,25 @@ export default function DashboardPage() {
   const vR = db.contas_receber.filter((r) => r.status === "Pendente" && r.vencimento && r.vencimento < t).length;
   const vP = db.contas_pagar.filter((r) => r.status === "Pendente" && r.vencimento && r.vencimento < t).length;
 
-  const metrics = [
-    { l: "Saldo total", v: fmt(saldo), c: "c-blue" },
-    { l: "A receber", v: fmt(aRec), c: "c-green" },
-    { l: "A pagar", v: fmt(aPag), c: "c-red" },
-    { l: "MRR", v: fmt(mrr), c: "c-orange" },
-    { l: "Clientes ativos", v: db.clientes.filter((c) => c.status === "Ativo").length, c: "" },
-    { l: "Venc. receber", v: vR, c: vR > 0 ? "c-red" : "" },
-    { l: "Venc. pagar", v: vP, c: vP > 0 ? "c-red" : "" },
-    { l: "Contratos ativos", v: db.contratos.filter((c) => c.status === "Ativo").length, c: "" },
+  /* `RNF-19` — cada numero declara de onde saiu. A `fonte` e obrigatoria no
+     tipo `ItemMetrica`: nao e possivel exibir KPI sem procedencia. */
+  const metrics: ItemMetrica[] = [
+    { l: "Saldo total", v: fmt(saldo), c: "c-blue", icone: "building-bank",
+      fonte: "soma do campo saldo das contas bancarias cadastradas" },
+    { l: "A receber", v: fmt(aRec), c: "c-green", icone: "arrow-down-circle",
+      fonte: "contas a receber com status Pendente" },
+    { l: "A pagar", v: fmt(aPag), c: "c-red", icone: "arrow-up-circle",
+      fonte: "contas a pagar com status Pendente" },
+    { l: "MRR", v: fmt(mrr), c: "c-orange", icone: "repeat",
+      fonte: "assinaturas Ativas a receber, normalizadas por ciclo" },
+    { l: "Clientes ativos", v: db.clientes.filter((c) => c.status === "Ativo").length, c: "",
+      icone: "users", fonte: "clientes com status Ativo" },
+    { l: "Venc. receber", v: vR, c: vR > 0 ? "c-red" : "", icone: "alert-triangle",
+      fonte: "contas a receber Pendentes com vencimento anterior a hoje" },
+    { l: "Venc. pagar", v: vP, c: vP > 0 ? "c-red" : "", icone: "alert-triangle",
+      fonte: "contas a pagar Pendentes com vencimento anterior a hoje" },
+    { l: "Contratos ativos", v: db.contratos.filter((c) => c.status === "Ativo").length, c: "",
+      icone: "file-text", fonte: "contratos com status Ativo" },
   ];
 
   const sortVenc = <T extends { vencimento: string | null }>(arr: T[]) =>
@@ -36,9 +46,7 @@ export default function DashboardPage() {
   return (
     <>
       <div className="ph">
-        <div className="pt">
-          <span>⬡ </span>Dashboard
-        </div>
+        <div className="pt">Dashboard</div>
         <span className="tiny">
           {new Date().toLocaleDateString("pt-BR", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
         </span>
@@ -129,9 +137,9 @@ export default function DashboardPage() {
               const cl = pct > 80 ? "pfill-r" : pct > 60 ? "pfill-a" : "";
               return (
                 <div key={c.id} style={{ marginBottom: 12 }}>
-                  <div className="row" style={{ fontSize: 12, marginBottom: 4, color: "var(--text2)" }}>
+                  <div className="row" style={{ fontSize: 12, marginBottom: 4, color: "var(--tinta-2)" }}>
                     <span>{c.nome}</span>
-                    <span style={{ color: "var(--text)" }}>{fmt(c.usado)} / {fmt(c.limite)}</span>
+                    <span style={{ color: "var(--tinta)" }}>{fmt(c.usado)} / {fmt(c.limite)}</span>
                   </div>
                   <div className="pbar">
                     <div className={`pfill ${cl}`} style={{ width: pct + "%" }} />

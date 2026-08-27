@@ -90,7 +90,7 @@ export function BaixaModal({
         )}
 
         <Field label="Registrar no caixa?" span>
-          <label className="hgap" style={{ fontSize: 13, color: "var(--text)" }}>
+          <label className="hgap" style={{ fontSize: 13, color: "var(--tinta)" }}>
             <input
               type="checkbox"
               checked={registrar && !!contaId}

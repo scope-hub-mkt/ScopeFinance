@@ -53,15 +53,15 @@ export default function CartoesPage() {
                   <button className="btn btn-sm btn-d" onClick={() => excluir(c.id)}><i className="ti ti-trash" /></button>
                 </div>
               </div>
-              <div className="row" style={{ fontSize: 12, marginBottom: 5, color: "var(--text2)" }}>
-                <span>Usado: <strong style={{ color: "var(--text)" }}>{fmt(us)}</strong></span>
-                <span style={{ fontWeight: 500, color: pct > 80 ? "var(--red)" : "var(--orange-l)" }}>{pct}%</span>
+              <div className="row" style={{ fontSize: 12, marginBottom: 5, color: "var(--tinta-2)" }}>
+                <span>Usado: <strong style={{ color: "var(--tinta)" }}>{fmt(us)}</strong></span>
+                <span style={{ fontWeight: 500, color: pct > 80 ? "var(--critico)" : "var(--marca-tinta)" }}>{pct}%</span>
               </div>
               <div className="pbar" style={{ marginBottom: 6 }}>
                 <div className={`pfill ${cl}`} style={{ width: pct + "%" }} />
               </div>
-              <div className="row" style={{ fontSize: 11, color: "var(--text3)" }}>
-                <span>Disponível: <strong style={{ color: "var(--green)" }}>{fmt(lim - us)}</strong></span>
+              <div className="row" style={{ fontSize: 11, color: "var(--tinta-3)" }}>
+                <span>Disponível: <strong style={{ color: "var(--ok)" }}>{fmt(lim - us)}</strong></span>
                 <span>Limite: {fmt(lim)}</span>
               </div>
             </div>

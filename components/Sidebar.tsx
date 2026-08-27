@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LogoIcon } from "./Logo";
+import { BotaoTema } from "./ui";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 const NAV: { g: string; items: { href: string; icon: string; l: string }[] }[] = [
@@ -38,7 +39,10 @@ const NAV: { g: string; items: { href: string; icon: string; l: string }[] }[] =
   },
   {
     g: "Fiscal",
-    items: [{ href: "/notas-fiscais", icon: "ti-receipt", l: "Notas fiscais" }],
+    items: [
+      { href: "/notas-fiscais", icon: "ti-receipt", l: "Notas fiscais" },
+      { href: "/fiscal", icon: "ti-percentage", l: "Retenções" },
+    ],
   },
   {
     g: "Sistema",
@@ -84,6 +88,7 @@ export function Sidebar({ userEmail }: { userEmail?: string | null }) {
       </div>
       <div className="sb-foot">
         {userEmail && <div className="sb-user" title={userEmail}>{userEmail}</div>}
+        <BotaoTema />
         <button className="btn btn-sm btn-block" onClick={logout}>
           <i className="ti ti-logout" /> Sair
         </button>

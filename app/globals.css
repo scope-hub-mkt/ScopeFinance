@@ -1,130 +1,422 @@
-/* ScopeFinance — tema preto/laranja da Scope Company (portado do protótipo) */
+/* ════════════════════════════════════════════════════════════════════
+   ScopeFinance — tema global.
+
+   ⚠️ ESTE BLOCO É CÓPIA VERSIONADA DO SISTEMA DE DESIGN DA SCOPE DASHBOARD.
+   Fonte: `app/globals.css` de `Dashboard_Oficial_Scope`, que por sua vez
+   implementa `docs/GLOBAL-DESIGN-DASHBOARD ✅.md` e `docs/DESIGN-TOKENS ✅.md`.
+
+   Cópia, e não pacote npm nem submódulo: é a decisão `B.3(a)` / `D-47`. Os
+   dois repositórios são separados por `D-42` e `D-44` (Dashboard = CEO,
+   ScopeFinance = CFO, poder equivalente). O que impede a deriva não é
+   disciplina, é detector: `scripts/deriva-tokens.mjs`, na Dashboard, compara
+   os dois blocos e falha nomeando o token que divergiu.
+
+   ⚠️ REGRA DE OURO: hex literal fora deste bloco é defeito, e
+   `npm run lint:design` recusa mecanicamente. Todo seletor veste `var(--…)`.
+
+   ─── ONDA 3, 26/08/2026: o tema virou atributo ───────────────────────
+   Até aqui este arquivo tinha UM tema — o escuro — cravado no `:root`. Agora
+   tem dois, na mesma estrutura da Dashboard e pelo mesmo motivo (§8):
+
+     · `:root`                       → CLARO, o padrão. Quatro das cinco
+                                       referências de painel são claras, e a
+                                       de prioridade máxima é clara.
+     · `[data-tema="escuro"]`        → o escuro que o ScopeFinance já rodava,
+                                       preservado byte a byte. ⛔ Ele NÃO
+                                       morre: descartá-lo seria jogar fora
+                                       identidade que já roda.
+     · `@media prefers-color-scheme` → quem nunca escolheu segue o sistema.
+                                       O `:not([data-tema=…])` nos dois
+                                       sentidos faz a escolha explícita
+                                       ganhar sempre.
+
+   ⚖️ O escuro NÃO é o claro com filtro invertido: os passos escuros são
+   selecionados para o fundo escuro e validados contra ele (Dashboard §3.4).
+   ════════════════════════════════════════════════════════════════════ */
 *{box-sizing:border-box;margin:0;padding:0}
+
+/* ═══ TEMA CLARO — o padrão ═════════════════════════════════════════ */
 :root{
-  --bg:#0d0d0d;--bg2:#141414;--bg3:#1a1a1a;--bg4:#222;
-  --border:#2a2a2a;
-  --orange:#E87520;--orange-d:#B85A10;--orange-l:#F5993A;
-  --og:rgba(232,117,32,.12);--ob:rgba(232,117,32,.3);
-  --text:#F0EDE8;--text2:#A09080;--text3:#6B5A4A;
-  --green:#2ECC71;--red:#E74C3C;--blue:#5BA3E8;
+  color-scheme: light;
+
+  /* ─── Rampa da marca (OKLCH h≈50,5°, L monótona) — Dashboard §3.2 ─────
+     O passo 450 é o laranja da Scope. ⚠️ NÃO troque pelo `#F6671E` das
+     referências: adotado e REVERTIDO em 21/08/2026 (conflito C-2) — a tarja
+     que o declarava era marca de terceiro. Das imagens se tira ESTRUTURA,
+     nunca identidade de marca.
+     ⚠️ A rampa NÃO é tematizada: a marca é a mesma nos dois temas. */
+  --lj-100:#FFE5D2;--lj-150:#FFD7BE;--lj-200:#FFC8A6;
+  --lj-250:#FFB890;--lj-300:#FDA978;--lj-350:#F8975D;
+  --lj-400:#F28641;--lj-450:#E87520;--lj-500:#D96A14;
+  --lj-550:#C75E02;--lj-600:#B55300;--lj-650:#A04900;
+  --lj-700:#883F03;
+
+  /* ─── Neutros PUROS (R=G=B) — DESIGN-TOKENS ✅.md §1.1, conflito C-1 ────
+     Resolve `B-2`: os neutros quentes `#A09080` / `#6B5A4A` que este arquivo
+     usava eram DOUTRINA (cinza puro ao lado de laranja leria como sujo).
+     As 4 referências de painel medem cinza puro matemático, várias com 100%
+     de moda. Medição venceu doutrina. */
+  --n-0:#FFFFFF;--n-25:#FBFBFB;--n-50:#F6F6F6;--n-75:#F3F3F3;
+  --n-100:#EBEBEB;--n-200:#DFDFDF;--n-300:#C8C8C8;
+  --n-500:#828282;--n-650:#555555;--n-900:#181818;
+
+  /* ─── Papéis de superfície (claro) ─────────────────────────
+     Valores MEDIDOS nas referências: plano #F6F6F6, fill de cartão #FFFFFF,
+     borda de cartão #F3F3F3 a 1px. */
+  --fundo: var(--n-50);
+  --sup: var(--n-0);
+  --sup-2: var(--n-25);
+  --sup-3: var(--n-100);
+  --linha: var(--n-75);
+  --linha-fraca: var(--n-50);
+  --linha-forte: var(--n-200);
+
+  /* ─── Papéis de tinta ─────────────────────────────── */
+  --tinta: var(--n-900);
+  --tinta-2: var(--n-650);
+  --tinta-3: var(--n-500);
+
+  /* ─── Marca ────────────────────────────────────── */
+  --marca: var(--lj-450);
+  --marca-tinta: var(--lj-600);
+  --marca-lav: #FFEDE0;
+  --marca-lav-2: rgba(232, 117, 32, 0.10);
+  --marca-borda: rgba(232, 117, 32, 0.28);
+  /* Texto GRANDE sobre a marca (≥24px): 3,00:1 sobre --lj-450 é o piso de
+     texto grande. Texto PEQUENO exige --tinta-acento-min: 5,92:1. 13px em
+     negrito NÃO é texto grande — o limiar é 18,66px. Por isso são DOIS. */
+  --tinta-acento:#FFFFFF;
+  --tinta-acento-min:var(--n-900);
+
+  /* ─── Status — fixo, nunca tematizado. Dashboard §3.6 ────────────
+     Sempre com ícone + rótulo: no claro, aviso e serio ficam abaixo de 3:1
+     por construção, e o par ícone+rótulo é a mitigação. */
+  --ok: #0CA30C;      --ok-lav: rgba(12, 163, 12, 0.10);   --ok-borda: rgba(12, 163, 12, 0.26);
+  --aviso: #FAB219;   --aviso-lav: rgba(250, 178, 25, 0.12); --aviso-borda: rgba(250, 178, 25, 0.30);
+  --serio: #EC835A;   --serio-lav: rgba(236, 131, 90, 0.12); --serio-borda: rgba(236, 131, 90, 0.30);
+  --critico: #D03B3B; --critico-lav: rgba(208, 59, 59, 0.09); --critico-borda: rgba(208, 59, 59, 0.26);
+  --info: #2A78D6;    --info-lav: rgba(42, 120, 214, 0.09);  --info-borda: rgba(42, 120, 214, 0.24);
+
+  --delta-bom: #006300;
+  --delta-ruim: #C0392B;
+
+  /* ─── Paleta categórica — 8 slots, ORDEM FIXA. Dashboard §3.4 ────────
+     Atribuída em sequência, JAMAIS ciclada. A ordem é mecanismo de segurança
+     para daltonismo, não gosto: saiu da enumeração das 5.040 ordenações com
+     o laranja travado no slot 1 (370 passavam). Trocar um slot exige rodar
+     `npm run validate:paleta` na Dashboard de novo.
+     ⚠️ Dispersão/bolha/mapa/anel carregam no máximo 3 séries. */
+  --s1: #E87520;  /* laranja (marca) */
+  --s2: #1BAF7A;  /* água    — 2,82:1 no claro, exige rótulo direto ou tabela */
+  --s3: #2A78D6;  /* azul */
+  --s4: #EDA100;  /* amarelo — 2,17:1 no claro, exige rótulo direto ou tabela */
+  --s5: #E87BA4;  /* magenta — 2,69:1 no claro, exige rótulo direto ou tabela */
+  --s6: #008300;  /* verde */
+  --s7: #4A3AA7;  /* violeta */
+  --s8: #E34948;  /* vermelho */
+
+  /* Rampa ordinal (funil, faixas, degraus) — quando a ORDEM é o dado.
+     No claro NÃO comece mais claro que --o-1: --lj-300 mede 1,89:1. */
+  --o-1: #F8975D; --o-2: #EC7C31; --o-3: #D6670B; --o-4: #BC5700; --o-5: #A04900;
+
+  /* ─── Cromo de gráfico — Dashboard §3.8 ───────────────────── */
+  --grade: var(--n-100);
+  --eixo: var(--n-300);
+  --tinta-eixo: var(--n-500);
+  --lavagem: 0.10;
+
+  /* ─── Forma — só estes raios existem ─────────────────────── */
+  --r-1:8px;--r-2:10px;--r-3:12px;--r-4:16px;--r-5:20px;--r-max:999px;
+
+  /* ─── Espaço (passo 4px — só estes valores existem) ───────────── */
+  --e-1:4px;--e-2:8px;--e-3:12px;--e-4:16px;
+  --e-5:20px;--e-6:24px;--e-8:32px;--e-10:40px;
+
+  /* ─── Elevação — neutra e difusa. NUNCA laranja: glow colorido é recurso
+     de tema escuro que não sobrevive a fundo claro, e é exatamente o `B-3`
+     que saiu deste arquivo na Onda 2.
+     MEDIDO: cartão de aplicação NÃO tem sombra no claro — a aresta escurece
+     igual nos 4 lados, então é borda, não sombra (conflito C-3). */
+  --sombra-1: none;
+  --sombra-2: 0 4px 12px rgba(24, 24, 24, 0.06), 0 2px 4px rgba(24, 24, 24, 0.04);
+  --sombra-3: 0 24px 60px rgba(24, 24, 24, 0.18);
+  --veu: rgba(24, 24, 24, 0.45);
+
+  /* ─── Movimento ──────────────────────────────────── */
+  /* Três durações por DISTÂNCIA, duas curvas por DIREÇÃO — RF-66 da
+     Dashboard, trazido aqui no MESMO passo por `D-47`/`B.3(a)`: token que
+     muda de um lado só é deriva, e `npm run deriva:tokens` reprova.
+     `--t` continua existindo como apelido — nenhum componente muda. */
+  --t-1:120ms;
+  --t-2:200ms;
+  --t-3:320ms;
+  --curva-entra:cubic-bezier(0,0,.2,1);
+  --curva-sai:cubic-bezier(.4,0,1,1);
+  --t:var(--t-1) var(--curva-entra);
+  --t-graf:420ms var(--curva-entra);
+
+  /* ─── Tipografia ────────────────────────────────── */
+  --fonte:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --fonte-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+
+  /* ─── Decoração ────────────────────────────────── */
+  --deco-op: 0.06;
+  --nav-l:264px;
+}
+
+/* ═══ TEMA ESCURO — a variante que o ScopeFinance já rodava ═════════
+   MEDIDO na referência 04 (única superfície escura tipo-app do material):
+   fundo #18191B, cartão #1F2021 — adotados em cinza puro, na mesma
+   luminosidade. ⚠️ A coluna "escuro" do §3.4 foi remedida sobre `#202020`
+   (era `#161513`, cartão quente que `L-32`/`C-1` substituiu): continua
+   passando 8/8 acima de 3:1, pior caso 3,29:1. As margens encolheram e
+   agora estão medidas. */
+[data-tema="escuro"]{
+  color-scheme: dark;
+
+  --fundo:#191919;
+  --sup:#202020;
+  --sup-2:#262626;
+  --sup-3:#2E2E2E;
+  --linha:#2C2C2C;
+  --linha-fraca:#232323;
+  --linha-forte:#3A3A3A;
+
+  --tinta:#F0F0F0;
+  --tinta-2:#A0A0A0;
+  --tinta-3:#757575;
+
+  --marca: var(--lj-450);
+  --marca-tinta: var(--lj-350);
+  --marca-lav: rgba(232, 117, 32, 0.13);
+  --marca-lav-2: rgba(232, 117, 32, 0.08);
+  --marca-borda: rgba(232, 117, 32, 0.34);
+
+  --ok: #0CA30C;      --ok-lav: rgba(12, 163, 12, 0.14);
+  --aviso: #FAB219;   --aviso-lav: rgba(250, 178, 25, 0.13);
+  --serio: #EC835A;   --serio-lav: rgba(236, 131, 90, 0.13);
+  --critico: #E66767; --critico-lav: rgba(230, 103, 103, 0.12); --critico-borda: rgba(230, 103, 103, 0.30);
+  --info: #3987E5;    --info-lav: rgba(57, 135, 229, 0.12);     --info-borda: rgba(57, 135, 229, 0.28);
+
+  --delta-bom: #0CA30C;
+  --delta-ruim: #E66767;
+
+  --s1: #DC6A16; --s2: #199E70; --s3: #3987E5; --s4: #C98500;
+  --s5: #D55181; --s6: #008300; --s7: #9085E9; --s8: #E66767;
+
+  --o-1: #FFB890; --o-2: #F8975D; --o-3: #E87520; --o-4: #C75E02; --o-5: #A04900;
+
+  --grade: #262626;
+  --eixo: #3A3A3A;
+  --tinta-eixo: #828282;
+  --lavagem: 0.14;
+
+  --sombra-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --sombra-2: 0 4px 14px rgba(0, 0, 0, 0.45);
+  --sombra-3: 0 24px 60px rgba(0, 0, 0, 0.6);
+  --veu: rgba(0, 0, 0, 0.7);
+  --deco-op: 0.1;
+}
+
+/* Quem nunca escolheu segue o sistema. O `:not([data-tema="claro"])` deixa a
+   escolha explícita ganhar nas duas direções — sem ele, quem escolhe claro
+   num sistema operacional escuro não consegue. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-tema="claro"]):not([data-tema="escuro"]) {
+    color-scheme: dark;
+    --fundo:#191919; --sup:#202020; --sup-2:#262626; --sup-3:#2E2E2E;
+    --linha:#2C2C2C; --linha-fraca:#232323; --linha-forte:#3A3A3A;
+    --tinta:#F0F0F0; --tinta-2:#A0A0A0; --tinta-3:#757575;
+    --marca-tinta: var(--lj-350);
+    --marca-lav: rgba(232, 117, 32, 0.13);
+    --marca-lav-2: rgba(232, 117, 32, 0.08);
+    --marca-borda: rgba(232, 117, 32, 0.34);
+    --ok-lav: rgba(12, 163, 12, 0.14);
+    --aviso-lav: rgba(250, 178, 25, 0.13);
+    --serio-lav: rgba(236, 131, 90, 0.13);
+    --critico: #E66767; --critico-lav: rgba(230, 103, 103, 0.12); --critico-borda: rgba(230, 103, 103, 0.30);
+    --info: #3987E5; --info-lav: rgba(57, 135, 229, 0.12); --info-borda: rgba(57, 135, 229, 0.28);
+    --delta-bom: #0CA30C; --delta-ruim: #E66767;
+    --s1: #DC6A16; --s2: #199E70; --s3: #3987E5; --s4: #C98500;
+    --s5: #D55181; --s6: #008300; --s7: #9085E9; --s8: #E66767;
+    --o-1: #FFB890; --o-2: #F8975D; --o-3: #E87520; --o-4: #C75E02; --o-5: #A04900;
+    --grade: #262626; --eixo: #3A3A3A; --tinta-eixo: #828282; --lavagem: 0.14;
+    --sombra-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --sombra-2: 0 4px 14px rgba(0, 0, 0, 0.45);
+    --sombra-3: 0 24px 60px rgba(0, 0, 0, 0.6);
+    --veu: rgba(0, 0, 0, 0.7);
+    --deco-op: 0.1;
+  }
 }
 html,body{height:100%}
-body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px;color:var(--text);background:var(--bg)}
+body{font-family:var(--fonte);font-size:14px;line-height:1.5;color:var(--tinta);background:var(--fundo)}
 a{color:inherit;text-decoration:none}
 
 .app{display:flex;min-height:100vh}
 
 /* SIDEBAR */
-.sb{width:220px;min-width:220px;background:var(--bg2);border-right:1px solid var(--ob);display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
-.sb-logo{padding:16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
-.sb-logo svg{filter:drop-shadow(0 0 6px rgba(232,117,32,.5))}
+.sb{width:220px;min-width:220px;background:var(--sup);border-right:1px solid var(--linha);display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+.sb-logo{padding:var(--e-4);border-bottom:1px solid var(--linha);display:flex;align-items:center;gap:var(--e-3)}
+.sb-logo svg,.login-head svg{color:var(--marca)}
 .sb-name{font-size:13px;font-weight:500}
-.sb-sub{font-size:10px;color:var(--orange);text-transform:uppercase;letter-spacing:.5px}
+.sb-sub{font-size:10px;color:var(--marca)}
 .sb-scroll{flex:1;overflow-y:auto}
-.nav-g{padding-top:4px}
-.nav-lbl{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;padding:10px 14px 3px}
-.ni{display:flex;align-items:center;gap:8px;padding:7px 14px;cursor:pointer;font-size:12.5px;color:var(--text2);border:none;background:none;width:100%;text-align:left;border-left:2px solid transparent;transition:all .15s}
-.ni:hover{background:var(--og);color:var(--text);border-left-color:var(--orange-d)}
-.ni.act{background:var(--og);color:var(--orange-l);border-left-color:var(--orange);font-weight:500}
-.sb-foot{border-top:1px solid var(--border);padding:10px 14px}
-.sb-user{font-size:11px;color:var(--text2);margin-bottom:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nav-g{padding-top:var(--e-1)}
+.nav-lbl{font-size:9px;color:var(--tinta-3);padding:var(--e-3) var(--e-4) var(--e-1)}
+.ni{display:flex;align-items:center;gap:var(--e-2);padding:var(--e-2) var(--e-4);cursor:pointer;font-size:12.5px;color:var(--tinta-2);border:none;background:none;width:100%;text-align:left;border-left:2px solid transparent;transition:all .15s}
+.ni:hover{background:var(--marca-lav);color:var(--tinta);border-left-color:var(--lj-600)}
+.ni.act{background:var(--marca-lav);color:var(--marca-tinta);border-left-color:var(--marca);font-weight:500}
+.sb-foot{border-top:1px solid var(--linha);padding:var(--e-3) var(--e-4);display:flex;flex-direction:column;gap:var(--e-2)}
+.sb-user{font-size:11px;color:var(--tinta-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* MAIN */
-.main{flex:1;overflow-y:auto;padding:22px;background:var(--bg);min-width:0}
-.ph{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid var(--border);gap:12px;flex-wrap:wrap}
+.main{flex:1;overflow-y:auto;padding:var(--e-6);background:var(--fundo);min-width:0}
+.ph{display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--e-5);padding-bottom:var(--e-4);border-bottom:1px solid var(--linha);gap:var(--e-3);flex-wrap:wrap}
 .pt{font-size:18px;font-weight:500}
-.pt span{color:var(--orange-l)}
 
 /* BUTTONS */
-.btn{display:inline-flex;align-items:center;gap:5px;padding:7px 14px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:12.5px;cursor:pointer;transition:all .15s}
-.btn:hover{border-color:var(--orange-d);background:var(--og);color:var(--orange-l)}
+.btn{display:inline-flex;align-items:center;gap:var(--e-1);padding:var(--e-2) var(--e-4);border-radius:var(--r-1);border:1px solid var(--linha);background:var(--sup-2);color:var(--tinta);font-size:12.5px;cursor:pointer;transition:all .15s}
+.btn:hover{border-color:var(--lj-600);background:var(--marca-lav);color:var(--marca-tinta)}
 .btn:disabled{opacity:.5;cursor:not-allowed}
-.btn-p{background:var(--orange);border-color:var(--orange);color:#0d0d0d;font-weight:500}
-.btn-p:hover{background:var(--orange-l);border-color:var(--orange-l);color:#0d0d0d}
-.btn-d{border-color:#5a1a1a;background:rgba(231,76,60,.08);color:var(--red)}
-.btn-d:hover{background:rgba(231,76,60,.2)}
-.btn-s{border-color:#1a4a2a;background:rgba(46,204,113,.08);color:var(--green)}
-.btn-sm{padding:4px 8px;font-size:11px}
+.btn-p{background:var(--marca);border-color:var(--marca);color:var(--tinta-acento-min);font-weight:500}
+.btn-p:hover{background:var(--marca-tinta);border-color:var(--marca-tinta);color:var(--tinta-acento-min)}
+.btn-d{border-color:var(--critico-borda);background:var(--critico-lav);color:var(--critico)}
+.btn-d:hover{background:var(--critico-lav);border-color:var(--critico)}
+.btn-s{border-color:var(--ok-borda);background:var(--ok-lav);color:var(--ok)}
+.btn-sm{padding:var(--e-1) var(--e-2);font-size:11px}
 .btn-block{width:100%;justify-content:center}
 
 /* CARDS */
-.card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:16px;position:relative;overflow:hidden}
-.card:before{content:"";position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--ob),transparent)}
+.card{background:var(--sup);border:1px solid var(--linha);border-radius:var(--r-1);padding:var(--e-4);position:relative;overflow:hidden}
 
 /* METRICS */
-.mgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:18px}
-.met{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:14px}
-.met-l{font-size:10px;color:var(--text2);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px}
-.met-v{font-size:20px;font-weight:500}
-.c-green{color:var(--green)}.c-red{color:var(--red)}.c-orange{color:var(--orange-l)}.c-blue{color:var(--blue)}
+/* ─── Tile de KPI — a Lei 2, cinco camadas (Onda 4) ─────────────────
+   `B-7` media este bloco como "um numero sozinho": rotulo 10px + valor 20px.
+   Agora: rotulo, valor 32px, delta com periodo nomeado, forma e procedencia.
+   32px e MEIO-TERMO declarado (DESIGN-TOKENS C-6): a referencia 01 poe todo
+   KPI em ~45px, e adotar isso apagaria a nocao de destaque. */
+.mgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:var(--e-4);margin-bottom:var(--e-5)}
+.met{
+  background:var(--sup);border:1px solid var(--linha);border-radius:var(--r-4);
+  padding:var(--e-4) var(--e-5);box-shadow:var(--sombra-1);
+  display:flex;flex-direction:column;min-height:140px;
+  transition:box-shadow var(--t);
+}
+.met:hover{box-shadow:var(--sombra-2)}
+.met-topo{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--e-2)}
+.met-l{font-size:11px;color:var(--tinta-2);font-weight:500;line-height:1.4}
+.met-chip{
+  width:32px;height:32px;flex-shrink:0;border-radius:var(--r-2);
+  display:flex;align-items:center;justify-content:center;
+  background:var(--marca-lav);color:var(--marca-tinta);font-size:16px;
+}
+.met-v{font-size:32px;font-weight:600;letter-spacing:-0.6px;margin-top:10px;line-height:1.15}
+.met-forma{padding-top:var(--e-3);height:52px}
+.met-fonte{
+  font-size:10px;color:var(--tinta-3);margin-top:auto;padding-top:var(--e-2);
+  display:flex;align-items:center;gap:4px;
+}
+.met-fonte i{font-size:12px}
+/* Delta — direcao por ICONE e por cor, porque "subiu" e "e bom" nao sao a
+   mesma coisa: em despesa e inadimplencia, subir e ruim. */
+.delta{
+  display:inline-flex;align-items:center;gap:3px;margin-top:var(--e-2);
+  padding:2px 8px;border-radius:var(--r-max);
+  font-size:11px;font-weight:600;border:1px solid transparent;
+  font-variant-numeric:tabular-nums;width:fit-content;
+}
+.delta i{font-size:13px}
+.delta-bom{background:var(--ok-lav);color:var(--delta-bom);border-color:var(--ok-borda)}
+.delta-ruim{background:var(--critico-lav);color:var(--delta-ruim);border-color:var(--critico-borda)}
+.delta-neutro{background:var(--sup-3);color:var(--tinta-2);border-color:var(--linha)}
+.delta-per{font-size:11px;color:var(--tinta-3);font-weight:400;margin-left:6px}
+.c-green{color:var(--ok)}.c-red{color:var(--critico)}.c-orange{color:var(--marca-tinta)}.c-blue{color:var(--info)}
 
 /* TABLE */
 .tbl-wrap{overflow-x:auto}
 table{width:100%;border-collapse:collapse}
-th{text-align:left;font-size:10px;font-weight:500;color:var(--text3);padding:8px 12px;border-bottom:1px solid var(--border);text-transform:uppercase;letter-spacing:.5px;white-space:nowrap}
-td{padding:9px 12px;border-bottom:1px solid var(--border);font-size:12.5px;color:var(--text);vertical-align:middle}
+th{text-align:left;font-size:10px;font-weight:500;color:var(--tinta-3);padding:var(--e-2) var(--e-3);border-bottom:1px solid var(--linha);white-space:nowrap}
+td{padding:var(--e-2) var(--e-3);border-bottom:1px solid var(--linha);font-size:12.5px;color:var(--tinta);vertical-align:middle}
 tr:last-child td{border-bottom:none}
-tbody tr:hover td{background:var(--og)}
-.muted{color:var(--text2)}
-.tiny{font-size:11px;color:var(--text3)}
+tbody tr:hover td{background:var(--marca-lav)}
+.muted{color:var(--tinta-2)}
+.tiny{font-size:11px;color:var(--tinta-3)}
 
 /* BADGES */
-.bdg{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:500;border:1px solid;white-space:nowrap}
-.bdg-g{background:rgba(46,204,113,.1);color:var(--green);border-color:rgba(46,204,113,.25)}
-.bdg-r{background:rgba(231,76,60,.1);color:var(--red);border-color:rgba(231,76,60,.25)}
-.bdg-a{background:rgba(232,117,32,.1);color:var(--orange-l);border-color:rgba(232,117,32,.25)}
-.bdg-b{background:rgba(91,163,232,.1);color:var(--blue);border-color:rgba(91,163,232,.25)}
-.bdg-x{background:rgba(160,144,128,.08);color:var(--text2);border-color:var(--border)}
+.bdg{display:inline-flex;align-items:center;padding:var(--e-1) var(--e-2);border-radius:var(--r-max);font-size:11px;font-weight:500;border:1px solid;white-space:nowrap}
+.bdg-g{background:var(--ok-lav);color:var(--ok);border-color:var(--ok-borda)}
+.bdg-r{background:var(--critico-lav);color:var(--critico);border-color:var(--critico-borda)}
+.bdg-a{background:var(--marca-lav);color:var(--marca-tinta);border-color:var(--marca-borda)}
+.bdg-b{background:var(--info-lav);color:var(--info);border-color:var(--info-borda)}
+.bdg-x{background:var(--sup-2);color:var(--tinta-2);border-color:var(--linha)}
 
 /* MODAL */
-.mover{position:fixed;inset:0;background:rgba(0,0,0,.8);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px}
-.mbox{background:var(--bg2);border:1px solid var(--ob);border-radius:10px;padding:24px;width:540px;max-width:95vw;max-height:88vh;overflow-y:auto;box-shadow:0 0 40px rgba(232,117,32,.12)}
-.mtitle{font-size:15px;font-weight:500;margin-bottom:18px;color:var(--orange-l);display:flex;align-items:center;gap:8px}
-.mtitle:before{content:"";display:block;width:3px;height:16px;background:var(--orange);border-radius:2px}
-.fgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.fg{display:flex;flex-direction:column;gap:5px}
-.fg label{font-size:10px;color:var(--text2);font-weight:500;text-transform:uppercase;letter-spacing:.4px}
-.fg input,.fg select,.fg textarea{padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;font-family:inherit;outline:none;transition:border .15s;width:100%}
-.fg input:focus,.fg select:focus,.fg textarea:focus{border-color:var(--orange)}
-.fg select option{background:var(--bg3)}
+.mover{position:fixed;inset:0;background:var(--veu);display:flex;align-items:center;justify-content:center;z-index:1000;padding:var(--e-4)}
+.mbox{background:var(--sup);border:1px solid var(--linha);border-radius:var(--r-2);padding:var(--e-6);width:540px;max-width:95vw;max-height:88vh;overflow-y:auto;box-shadow:var(--sombra-3)}
+.mtitle{font-size:17px;font-weight:600;letter-spacing:-0.2px;margin-bottom:var(--e-5)}
+.fgrid{display:grid;grid-template-columns:1fr 1fr;gap:var(--e-3)}
+.fg{display:flex;flex-direction:column;gap:var(--e-1)}
+.fg label{font-size:10px;color:var(--tinta-2);font-weight:500}
+.fg input,.fg select,.fg textarea{padding:var(--e-2) var(--e-3);border-radius:var(--r-1);border:1px solid var(--linha);background:var(--sup-2);color:var(--tinta);font-size:13px;font-family:inherit;outline:none;transition:border .15s;width:100%}
+.fg input:focus,.fg select:focus,.fg textarea:focus{border-color:var(--marca)}
+.fg select option{background:var(--sup-2)}
 .fg textarea{resize:vertical;min-height:60px}
-.mact{display:flex;gap:8px;justify-content:flex-end;margin-top:18px;padding-top:14px;border-top:1px solid var(--border)}
+.mact{display:flex;gap:var(--e-2);justify-content:flex-end;margin-top:var(--e-5);padding-top:var(--e-4);border-top:1px solid var(--linha)}
 .span2{grid-column:1/-1}
+.mbox-lg{width:840px}
+.ajuda{font-size:11px;color:var(--tinta-3);line-height:1.5}
+.empty i{display:block;font-size:22px;opacity:.5;margin-bottom:var(--e-2)}
 
 /* TABS */
-.tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:16px;flex-wrap:wrap}
-.tab{padding:8px 16px;font-size:12.5px;cursor:pointer;color:var(--text2);border-bottom:2px solid transparent;background:none;border-top:none;border-left:none;border-right:none;transition:all .15s}
-.tab:hover{color:var(--text);background:var(--og)}
-.tab.act{color:var(--orange-l);border-bottom-color:var(--orange);font-weight:500}
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--linha);margin-bottom:var(--e-4);flex-wrap:wrap}
+.tab{padding:var(--e-2) var(--e-4);font-size:12.5px;cursor:pointer;color:var(--tinta-2);border-bottom:2px solid transparent;background:none;border-top:none;border-left:none;border-right:none;transition:all .15s}
+.tab:hover{color:var(--tinta);background:var(--marca-lav)}
+.tab.act{color:var(--marca-tinta);border-bottom-color:var(--marca);font-weight:500}
 
 /* MISC */
-.two{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:var(--e-4);margin-bottom:var(--e-4)}
 @media(max-width:820px){.two{grid-template-columns:1fr}}
-.stitle{font-size:13px;font-weight:500;margin-bottom:12px;display:flex;align-items:center;gap:6px}
-.pbar{background:var(--bg4);border-radius:999px;height:6px;overflow:hidden;border:1px solid var(--border)}
-.pfill{height:100%;border-radius:999px;background:var(--orange);transition:width .3s}
-.pfill-r{background:var(--red)}.pfill-a{background:var(--orange-d)}
-.empty{text-align:center;padding:36px;color:var(--text3)}
-.sbar{display:flex;align-items:center;gap:8px;margin-bottom:16px}
-.sbar input{flex:1;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:13px;outline:none}
-.sbar input:focus{border-color:var(--orange)}
-.actions{display:flex;gap:4px}
-.cardgrid{display:grid;gap:12px}
-.row{display:flex;align-items:center;justify-content:space-between;gap:12px}
-.hgap{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.spin{display:inline-block;width:14px;height:14px;border:2px solid var(--og);border-top-color:var(--orange);border-radius:50%;animation:sp .7s linear infinite}
+.stitle{font-size:13px;font-weight:500;margin-bottom:var(--e-3);display:flex;align-items:center;gap:var(--e-2)}
+.pbar{background:var(--sup-3);border-radius:var(--r-max);height:6px;overflow:hidden;border:1px solid var(--linha)}
+.pfill{height:100%;border-radius:var(--r-max);background:var(--marca);transition:width .3s}
+.pfill-r{background:var(--critico)}.pfill-a{background:var(--lj-600)}
+.empty{text-align:center;padding:var(--e-10);color:var(--tinta-3)}
+
+/* ─── Formas (Onda 5) ───────────────────────────────────────────────
+   O `Bars` artesanal desenhava dado com `style` inline; isto e o primitivo
+   que o substituiu. Ver `BarrasH` em components/ui.tsx. */
+.vgap{display:flex;flex-direction:column;gap:var(--e-3)}
+.gr-entra{animation:gr-entra var(--t-graf) both}
+@keyframes gr-entra{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.gr-entra{animation:none}}
+/* Vazio de GRAFICO, distinto do vazio de tabela: precisa dizer o que faltou
+   medir, nao so que nao ha nada. */
+.gr-vazio{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:90px;color:var(--tinta-3);font-size:11.5px;text-align:center}
+.gr-vazio i{font-size:20px;opacity:.5}
+.gr-linha{margin-bottom:5px}
+.gr-rotulo{font-size:12.5px;color:var(--tinta-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gr-valor{font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.gr-trilho{height:10px}
+.sbar{display:flex;align-items:center;gap:var(--e-2);margin-bottom:var(--e-4)}
+.sbar input{flex:1;padding:var(--e-2) var(--e-3);border-radius:var(--r-1);border:1px solid var(--linha);background:var(--sup-2);color:var(--tinta);font-size:13px;outline:none}
+.sbar input:focus{border-color:var(--marca)}
+.actions{display:flex;gap:var(--e-1)}
+.cardgrid{display:grid;gap:var(--e-3)}
+.row{display:flex;align-items:center;justify-content:space-between;gap:var(--e-3)}
+.hgap{display:flex;gap:var(--e-2);align-items:center;flex-wrap:wrap}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid var(--marca-lav);border-top-color:var(--marca);border-radius:50%;animation:sp .7s linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}
-.loading{display:flex;align-items:center;justify-content:center;gap:10px;padding:60px;color:var(--text2)}
-.toast-host{position:fixed;bottom:20px;right:20px;z-index:2000;display:flex;flex-direction:column;gap:8px;align-items:flex-end}
-.toast{background:var(--bg2);border:1px solid var(--ob);border-left:3px solid var(--orange);border-radius:8px;padding:12px 16px;font-size:13px;box-shadow:0 8px 30px rgba(0,0,0,.5);max-width:360px}
-.toast.err{border-left-color:var(--red)}
-.toast.ok{border-left-color:var(--green)}
+.loading{display:flex;align-items:center;justify-content:center;gap:var(--e-3);padding:var(--e-10);color:var(--tinta-2)}
+.toast-host{position:fixed;bottom:20px;right:20px;z-index:2000;display:flex;flex-direction:column;gap:var(--e-2);align-items:flex-end}
+.toast{background:var(--sup);border:1px solid var(--linha);border-left:3px solid var(--marca);border-radius:var(--r-1);padding:var(--e-3) var(--e-4);font-size:13px;box-shadow:var(--sombra-2);max-width:360px}
+.toast.err{border-left-color:var(--critico)}
+.toast.ok{border-left-color:var(--ok)}
 
 /* LOGIN */
-.login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:radial-gradient(1200px 600px at 50% -10%,rgba(232,117,32,.10),transparent)}
-.login-box{width:380px;max-width:100%;background:var(--bg2);border:1px solid var(--ob);border-radius:12px;padding:30px;box-shadow:0 0 50px rgba(232,117,32,.10)}
-.login-head{display:flex;align-items:center;gap:12px;margin-bottom:24px}
+.login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:var(--e-5);background:radial-gradient(1200px 600px at 50% -10%,var(--marca-lav-2),transparent)}
+.login-box{width:380px;max-width:100%;background:var(--sup);border:1px solid var(--linha);border-radius:var(--r-3);padding:var(--e-8);box-shadow:var(--sombra-3)}
+.login-head{display:flex;align-items:center;gap:var(--e-3);margin-bottom:var(--e-6)}
 .login-head .sb-name{font-size:16px}
-.login form{display:flex;flex-direction:column;gap:14px}
-.login .err{color:var(--red);font-size:12px;min-height:16px}
-.link{color:var(--orange-l);cursor:pointer;background:none;border:none;font-size:12px;padding:0}
+.login form{display:flex;flex-direction:column;gap:var(--e-4)}
+.login .err{color:var(--critico);font-size:12px;min-height:16px}
+.link{color:var(--marca-tinta);cursor:pointer;background:none;border:none;font-size:12px;padding:0}
