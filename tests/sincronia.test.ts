@@ -238,3 +238,69 @@ describe("enfileirarEvento / entregarFila — a via de volta", () => {
     expect(espiao).not.toHaveBeenCalled();
   });
 });
+
+// ════════════════════════════════════════════════════════════════════
+describe("§5.2 — o espelho do catálogo de serviços", () => {
+  const SERVICO = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+  let n = 0;
+
+  const evtServico = (tipo: string, dados: Record<string, unknown> = {}): Envelope =>
+    envelope(
+      {
+        servico_id: SERVICO,
+        nome: "Gestão de redes sociais",
+        slug: "gestao-de-redes",
+        area: "Criação",
+        preco_tabela: 2500,
+        recorrencia: "recorrente",
+        ativo: true,
+        fonte: "dashboard",
+        ...dados,
+      },
+      { evento: tipo, id: `evt_servico_${++n}` }
+    );
+
+  it("servico.criado insere no espelho com o MESMO id dos dois lados", async () => {
+    const r = await aplicarEvento(banco as never, evtServico("servico.criado"));
+    expect(r.estado).toBe("espelhado");
+
+    const s = banco.tabela("servicos_espelho")[0];
+    // 📐 `ESTADO §8.4`: é o mesmo id que mantém cobrança já gravada apontando
+    // para serviço válido. Um uuid próprio deste lado quebraria isso.
+    expect(s.id).toBe(SERVICO);
+    expect(s.preco_tabela).toBe(2500);
+    expect(s.ativo).toBe(true);
+    expect(s.fonte).toBe("dashboard");
+  });
+
+  it("servico.atualizado sobrescreve a mesma linha, não cria a segunda", async () => {
+    await aplicarEvento(banco as never, evtServico("servico.criado"));
+    await aplicarEvento(banco as never, evtServico("servico.atualizado", { preco_tabela: 2900 }));
+
+    expect(banco.tabela("servicos_espelho")).toHaveLength(1);
+    expect(banco.tabela("servicos_espelho")[0].preco_tabela).toBe(2900);
+  });
+
+  it("⛔ servico.encerrado marca INATIVO e NUNCA apaga", async () => {
+    await aplicarEvento(banco as never, evtServico("servico.criado"));
+    await aplicarEvento(banco as never, evtServico("servico.encerrado"));
+
+    // Há cobrança histórica apontando para o serviço; apagá-lo a deixaria
+    // órfã. É o mesmo raciocínio da exclusão lógica de `ESTADO §5.4`.
+    expect(banco.tabela("servicos_espelho")).toHaveLength(1);
+    const s = banco.tabela("servicos_espelho")[0];
+    expect(s.ativo).toBe(false);
+    expect(s.encerrado_em).toBeTruthy();
+  });
+
+  it("evento de serviço sem id é ignorado com motivo, e nada é gravado", async () => {
+    const r = await aplicarEvento(banco as never, evtServico("servico.criado", { servico_id: null }));
+    expect(r.estado).toBe("ignorado");
+    expect(banco.tabela("servicos_espelho")).toHaveLength(0);
+  });
+
+  it("⛔ o espelho NÃO reemite — sem supressão de eco o cadastro ia e voltava para sempre", async () => {
+    await aplicarEvento(banco as never, evtServico("servico.criado"));
+    expect(banco.tabela("integracao_enviados")).toHaveLength(0);
+  });
+});

@@ -38,6 +38,7 @@ export const MAX_TENTATIVAS = ESCADA_RETRY_MS.length;
 
 export type ResultadoAplicacao =
   | { estado: "aplicado"; acao: "criar" | "atualizar"; cliente_id: string }
+  | { estado: "espelhado"; servico_id: string; acao: "criar" | "atualizar" | "encerrar" }
   | { estado: "duplicado" }
   | { estado: "ignorado"; motivo: string }
   | { estado: "erro"; motivo: string };
@@ -64,6 +65,17 @@ export async function aplicarEvento(
     // Dashboard funcionando. Responder "ok" faz ela parar de tentar.
     if (insErr.code === "23505") return { estado: "duplicado" };
     return { estado: "erro", motivo: insErr.message };
+  }
+
+  // §5.2: o catálogo é da Dashboard e aqui fica um espelho SOMENTE LEITURA.
+  // ⛔ Nenhuma tela deste sistema escreve em `servicos_espelho` — dois
+  // catálogos editáveis seriam dois preços para o mesmo serviço, e a
+  // divergência só apareceria meses depois, num relatório, com proposta
+  // comercial e comissão já contaminadas.
+  if (env.evento.startsWith("servico.")) {
+    const r = await espelharServico(supabase, env);
+    await marcarProcessado(supabase, env.id, r.estado === "erro" ? r.motivo : null);
+    return r;
   }
 
   const leitura = interpretarEvento(env);
@@ -108,6 +120,61 @@ export async function aplicarEvento(
 
   await marcarProcessado(supabase, env.id, null);
   return { estado: "aplicado", acao: leitura.acao, cliente_id: cliente.id };
+}
+
+/**
+ * Aplica `servico.criado` / `servico.atualizado` / `servico.encerrado`.
+ *
+ * 📐 O `id` é o MESMO dos dois lados (`ESTADO §8.4`) — é isso que mantém
+ * cobrança já gravada apontando para serviço válido, e é por isso que o upsert
+ * usa o `servico_id` que veio, e não um uuid próprio.
+ *
+ * ⛔ **`encerrado` marca inativo; NUNCA apaga.** Há cobrança histórica
+ * apontando para o serviço, e apagá-lo a deixaria órfã — o mesmo raciocínio da
+ * exclusão lógica de `ESTADO §5.4`.
+ */
+async function espelharServico(
+  supabase: SupabaseClient,
+  env: Envelope
+): Promise<ResultadoAplicacao> {
+  const d = (env.dados ?? {}) as Record<string, unknown>;
+  const servicoId = typeof d.servico_id === "string" ? d.servico_id : null;
+  const nome = typeof d.nome === "string" ? d.nome.trim() : "";
+
+  if (!servicoId || !nome) {
+    return { estado: "ignorado", motivo: "evento de serviço sem `servico_id` ou `nome`" };
+  }
+
+  const encerrado = env.evento === "servico.encerrado";
+  const texto = (v: unknown) => (typeof v === "string" && v ? v : null);
+  const numero = (v: unknown) => (v === null || v === undefined ? null : Number(v));
+
+  const { error } = await supabase.from("servicos_espelho").upsert(
+    {
+      id: servicoId,
+      nome,
+      slug: texto(d.slug),
+      area: texto(d.area),
+      tipo_cobranca: texto(d.tipo_cobranca),
+      preco_tabela: numero(d.preco_tabela),
+      custo: numero(d.custo),
+      recorrencia: texto(d.recorrencia),
+      // Encerrado sai do catálogo ativo e permanece na tabela.
+      ativo: encerrado ? false : d.ativo !== false,
+      encerrado_em: encerrado ? new Date().toISOString() : null,
+      sincronizado_em: new Date().toISOString(),
+      fonte: "dashboard",
+    },
+    { onConflict: "id" }
+  );
+
+  if (error) return { estado: "erro", motivo: error.message };
+
+  return {
+    estado: "espelhado",
+    servico_id: servicoId,
+    acao: encerrado ? "encerrar" : env.evento === "servico.criado" ? "criar" : "atualizar",
+  };
 }
 
 async function marcarProcessado(supabase: SupabaseClient, eventoId: string, erro: string | null) {
