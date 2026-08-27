@@ -1,7 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { autenticarCrm, lerPayloadCrm } from "@/lib/crm/contrato";
 import { aplicarEventoCrm } from "@/lib/crm/aplicar";
+import { entregarFila } from "@/lib/integracao/sincronia";
 
 export const dynamic = "force-dynamic";
 
@@ -71,7 +72,21 @@ export async function POST(req: Request) {
     );
   }
 
-  const r = await aplicarEventoCrm(createSupabaseAdmin(), leitura.payload, corpo);
+  const supabase = createSupabaseAdmin();
+  const r = await aplicarEventoCrm(supabase, leitura.payload, corpo);
+
+  // ⚠️ **Enfileirar não é entregar, e esta linha foi esquecida duas vezes hoje.**
+  // `replicarParaDashboard` grava na outbox; sem cutucar a entrega aqui, quem
+  // entrega é o cron — uma vez por dia. O cliente nasceria no Finance e
+  // apareceria na Dashboard **no dia seguinte**, o que é indistinguível de não
+  // aparecer para quem está olhando a tela.
+  //
+  // ⚖️ Depois da resposta, não antes: o CRM não espera a rede da Dashboard, e
+  // a outbox garante o evento se esta passada falhar. É o mesmo padrão do CRUD
+  // da tela (`app/api/[resource]`).
+  if (r.estado === "aplicado") {
+    after(() => entregarFila(supabase, 10));
+  }
 
   switch (r.estado) {
     case "ignorado":
