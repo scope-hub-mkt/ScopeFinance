@@ -82,6 +82,37 @@ jobs:
       - name: Design
         run: npm run lint:design
 
+      # ⚠️ **O CI estava VERMELHO desde 27/08/2026 (`b7c1ed6`) por causa disto**,
+      # e o motivo é de ambiente, não de schema:
+      #
+      #     ERROR: role "authenticated" does not exist
+      #     CONTEXT: create policy "auth_all" on clientes for all to authenticated
+      #
+      # O `authenticated` é um papel que o **Supabase** provisiona; o Postgres
+      # cru do runner não o tem. Toda a seção de RLS do `schema.sql` — que é
+      # correta e necessária em produção — abortava a aplicação inteira.
+      #
+      # ⚖️ **A correção é criar o papel aqui, não remover o RLS de lá.** O
+      # objetivo deste passo é provar que `supabase/schema.sql` continua
+      # aplicável do zero (é o que pega migração que nunca chegou ao banco — o
+      # defeito que este projeto já viu duas vezes). Um schema adaptado para o
+      # CI provaria que a *adaptação* aplica, e a produção seguiria sem
+      # conferência. O arquivo tem de ser byte a byte o que roda no Supabase.
+      - name: Provisionar os papéis que o Supabase provê e o Postgres cru não
+        run: |
+          psql "postgresql://postgres:ci@localhost:5432/postgres" -v ON_ERROR_STOP=1 -c \
+            "do \$\$ begin
+               if not exists (select 1 from pg_roles where rolname = 'authenticated') then
+                 create role authenticated nologin;
+               end if;
+               if not exists (select 1 from pg_roles where rolname = 'anon') then
+                 create role anon nologin;
+               end if;
+               if not exists (select 1 from pg_roles where rolname = 'service_role') then
+                 create role service_role nologin bypassrls;
+               end if;
+             end \$\$;"
+
       - name: Aplicar o schema no Postgres do CI
         run: psql "postgresql://postgres:ci@localhost:5432/postgres" -v ON_ERROR_STOP=1 -q -f supabase/schema.sql
 
