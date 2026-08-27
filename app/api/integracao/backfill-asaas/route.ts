@@ -3,6 +3,7 @@ import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import {
   backfillAssinaturas,
   backfillClientes,
+  backfillClientesOrfaos,
   backfillCobrancas,
   backfillNotas,
   religarOrfaos,
@@ -37,7 +38,11 @@ export const maxDuration = 60;
  * outras três resolvem `cliente_id` por vínculo já gravado; `religar` por
  * último, para pegar o que o webhook tenha gravado órfão no meio do caminho.
  *
- *   clientes → assinaturas → cobrancas → notas → religar
+ *   clientes → assinaturas → cobrancas → notas → clientes-orfaos → religar
+ *
+ * `clientes-orfaos` vem DEPOIS das cobranças de propósito: ela descobre quem
+ * importar lendo as linhas que ficaram sem dono, e por isso precisa que elas
+ * já existam.
  *
  * ⚠️ **Rode com `seco=true` antes.** A passada seca lê tudo, decide tudo,
  * reporta os conflitos e **não grava nada**. É a única forma de saber o que a
@@ -62,6 +67,8 @@ export async function GET(req: NextRequest) {
     switch (etapa) {
       case "clientes":
         return ok(await backfillClientes(supabase, { offset, limite, seco }));
+      case "clientes-orfaos":
+        return ok(await backfillClientesOrfaos(supabase, { seco }));
       case "assinaturas":
         return ok(await backfillAssinaturas(supabase, { offset, limite, seco }));
       case "cobrancas":
@@ -72,7 +79,7 @@ export async function GET(req: NextRequest) {
         return ok(await religarOrfaos(supabase, seco));
       default:
         return fail(
-          `etapa "${etapa}" não existe — use clientes | assinaturas | cobrancas | notas | religar`,
+          `etapa "${etapa}" não existe — use clientes | clientes-orfaos | assinaturas | cobrancas | notas | religar`,
           400
         );
     }

@@ -1,6 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { listarPagina } from "../asaas";
+import { buscarUm, listarPagina } from "../asaas";
 import { clienteDoAsaas, linhaDaAssinatura, linhaDaCobranca, linhaDaNota } from "./mapear";
 import { asaasParaDataLocal } from "./webhook";
 
@@ -33,7 +33,13 @@ import { asaasParaDataLocal } from "./webhook";
  * depois, sem ninguém saber qual das duas está certa.
  */
 
-export type Etapa = "clientes" | "assinaturas" | "cobrancas" | "notas" | "religar";
+export type Etapa =
+  | "clientes"
+  | "clientes-orfaos"
+  | "assinaturas"
+  | "cobrancas"
+  | "notas"
+  | "religar";
 
 export interface Conflito {
   etapa: Etapa;
@@ -276,6 +282,152 @@ export async function backfillClientes(
       if (error) {
         r.conflitos.push({
           etapa: "clientes",
+          asaas_id: asaasId,
+          documento,
+          nome: String(linha.nome),
+          motivo: error.message,
+        });
+        continue;
+      }
+    }
+    r.criados++;
+  }
+
+  return r;
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  1b. Os clientes que a listagem não mostra
+// ════════════════════════════════════════════════════════════════════
+
+/**
+ * Importa os `customer` **excluídos no Asaas** que ainda têm cobrança aqui.
+ *
+ * ⚠️ **O achado que criou esta etapa, medido em 28/08/2026.** Depois de
+ * importar os 22 clientes que `GET /customers` devolve, sobraram **48
+ * cobranças órfãs** distribuídas em **13 customers**. Consultados um a um por
+ * id, todos respondem `200` com `"deleted": true` — a listagem padrão do Asaas
+ * **omite cliente excluído**, e o `deletedOnly` não os separa. Sem esta etapa,
+ * R$ de receita histórica ficariam para sempre sem dono, e nenhuma tela diria
+ * por quê.
+ *
+ * ⛔ **Excluído lá não vira excluído aqui.** É a assimetria já decidida em
+ * `ESTADO §5.4`: exclusão lógica atravessa a ponte, expurgo não. O cliente
+ * entra com `status = 'Inativo'` — o que liga a cobrança ao dono **sem** somar
+ * ao `clientes_ativos` do painel, que conta só `'Ativo'`. Omiti-lo seria
+ * perder o vínculo; importá-lo como ativo seria inflar um indicador.
+ *
+ * A busca é **por id, a partir das próprias órfãs** — não por listagem. Só
+ * traz o que faz falta, e não depende de um filtro da API se comportar.
+ */
+export async function backfillClientesOrfaos(
+  supabase: SupabaseClient,
+  opts: OpcoesBackfill = {}
+): Promise<ResultadoEtapa> {
+  const seco = opts.seco ?? false;
+  const r = vazio("clientes-orfaos", 0, seco);
+
+  const alvos = new Set<string>();
+  for (const tabela of ["contas_receber", "assinaturas", "notas_fiscais"] as const) {
+    const { data } = await supabase
+      .from(tabela)
+      .select("asaas_customer_id")
+      .is("cliente_id", null)
+      .not("asaas_customer_id", "is", null)
+      .limit(2000);
+    for (const linha of (data ?? []) as Array<{ asaas_customer_id: string }>) {
+      alvos.add(linha.asaas_customer_id);
+    }
+  }
+
+  r.lidos = alvos.size;
+  const reivindicados = new Map<string, string>();
+
+  for (const asaasId of alvos) {
+    const { data: jaTem } = await supabase
+      .from("clientes")
+      .select("id")
+      .eq("asaas_customer_id", asaasId)
+      .maybeSingle();
+    if (jaTem) {
+      r.ignorados++;
+      continue;
+    }
+
+    let bruto: Record<string, unknown> | null = null;
+    try {
+      bruto = await buscarUm<Record<string, unknown>>(`/customers/${asaasId}`);
+    } catch (e) {
+      r.conflitos.push({
+        etapa: "clientes-orfaos",
+        asaas_id: asaasId,
+        motivo: `o Asaas não devolveu este customer: ${e instanceof Error ? e.message : "erro"}`,
+      });
+      continue;
+    }
+    if (!bruto) {
+      r.ignorados++;
+      continue;
+    }
+
+    const { linha, documento } = clienteDoAsaas(bruto);
+    // ⛔ Excluído no gateway entra como Inativo, nunca como Ativo: liga a
+    // cobrança ao dono sem inflar `clientes_ativos`.
+    if (bruto.deleted === true) linha.status = "Inativo";
+
+    if (documento) {
+      const jaNesteLote = reivindicados.get(documento);
+      if (jaNesteLote && jaNesteLote !== asaasId) {
+        r.conflitos.push({
+          etapa: "clientes-orfaos",
+          asaas_id: asaasId,
+          documento,
+          nome: String(linha.nome),
+          motivo: `o documento ${documento} chega duas vezes nesta etapa (customers ${jaNesteLote} e ${asaasId}) — decisão humana`,
+        });
+        continue;
+      }
+      reivindicados.set(documento, asaasId);
+
+      const { data: porDoc } = await supabase
+        .from("clientes")
+        .select("id, nome, asaas_customer_id")
+        .eq("documento_principal", documento)
+        .maybeSingle();
+
+      if (porDoc) {
+        const alvo = porDoc as { id: string; nome: string; asaas_customer_id: string | null };
+        if (alvo.asaas_customer_id && alvo.asaas_customer_id !== asaasId) {
+          r.conflitos.push({
+            etapa: "clientes-orfaos",
+            asaas_id: asaasId,
+            documento,
+            nome: String(linha.nome),
+            motivo:
+              `o documento ${documento} já pertence ao cliente ${alvo.id} ("${alvo.nome}"), ` +
+              `vinculado a outro customer (${alvo.asaas_customer_id}) — decisão humana`,
+          });
+          continue;
+        }
+        // ⚠️ Só o vínculo. O cadastro que já existe aqui pode ter vindo do CRM
+        // ou da tela, e um customer EXCLUÍDO no gateway não tem autoridade
+        // para reescrever nome, contato nem status de um cliente vivo.
+        if (!seco) {
+          await supabase
+            .from("clientes")
+            .update({ asaas_customer_id: asaasId, sincronizado_em: new Date().toISOString() })
+            .eq("id", alvo.id);
+        }
+        r.vinculados++;
+        continue;
+      }
+    }
+
+    if (!seco) {
+      const { error } = await supabase.from("clientes").insert(linha);
+      if (error) {
+        r.conflitos.push({
+          etapa: "clientes-orfaos",
           asaas_id: asaasId,
           documento,
           nome: String(linha.nome),

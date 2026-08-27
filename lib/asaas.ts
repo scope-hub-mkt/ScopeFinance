@@ -85,6 +85,19 @@ export function listarPagina<T = Record<string, unknown>>(
   return asaasRequest<PaginaAsaas<T>>(`${colecao}${sep}limit=${limit}&offset=${offset}`);
 }
 
+/**
+ * Um recurso do Asaas pelo id.
+ *
+ * ⚠️ Existe porque a **listagem omite o que foi excluído**: medido em
+ * 28/08/2026, `GET /customers` devolve 22 e há 13 outros, todos com
+ * `"deleted": true`, que só respondem quando pedidos pelo id — e que têm
+ * cobrança real neste banco. Uma importação que confie só na listagem deixa
+ * essa receita sem dono e não avisa.
+ */
+export function buscarUm<T = Record<string, unknown>>(caminho: string): Promise<T> {
+  return asaasRequest<T>(caminho);
+}
+
 // ─── Customers ──────────────────────────────────────────────────────
 export interface AsaasCustomer {
   id: string;

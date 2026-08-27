@@ -46,7 +46,17 @@ if (!env.CRON_SECRET) {
 // ⚖️ A ordem não é arbitrária: as três do meio resolvem `cliente_id` por
 // vínculo já gravado, então `clientes` precisa vir antes. `religar` fecha,
 // pegando o que o webhook tenha gravado órfão durante a importação.
-const ETAPAS = ["clientes", "assinaturas", "cobrancas", "notas", "religar"];
+const ETAPAS = [
+  "clientes",
+  "assinaturas",
+  "cobrancas",
+  "notas",
+  // Depois das cobranças de propósito: esta etapa descobre quem importar
+  // lendo as linhas que ficaram sem dono (o Asaas omite cliente excluído da
+  // listagem, e 13 deles têm cobrança real aqui).
+  "clientes-orfaos",
+  "religar",
+];
 
 const num = (n) => String(n).padStart(4, " ");
 
@@ -130,4 +140,9 @@ if (!GRAVAR) {
   console.log("Passada seca. Nada foi gravado.");
   console.log("Para valer:  node scripts/backfill-asaas.mjs --gravar");
 }
-process.exit(houveErro ? 1 : 0);
+
+// `exitCode` e não `process.exit()`: o segundo derruba o processo com o
+// `AbortSignal.timeout` do último fetch ainda vivo, e o libuv do Windows morre
+// com "Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)". Barulho que
+// parece falha do backfill e não é.
+process.exitCode = houveErro ? 1 : 0;
