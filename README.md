@@ -124,13 +124,13 @@ registrou riscos que foram **aceitos, não resolvidos**. Parte caiu em
 
 | Item | Estado |
 |---|---|
-| Suíte de testes | ✅ **existe desde 25/08/2026** — `npm test`, 103 casos (contrato, assinatura, recorrência, sincronia, colunas graváveis) |
+| Suíte de testes | ✅ **existe desde 25/08/2026** — `npm test`, **123 casos** em 7 arquivos (contrato, assinatura, recorrência, sincronia, colunas graváveis). ♻️ Medido em 26/08/2026; eram 103 em 25/08 |
 | CI | ✅ **existe desde 25/08/2026** — `.github/workflows/ci.yml`: tipos, **lint**, testes e build |
 | **Lint** | ✅ **passou a existir de verdade em 25/08/2026.** O script era `next lint` **sem ESLint instalado e sem config** — um comando que promete análise e entrega silêncio: saía limpo porque não olhava para nada. Agora ESLint é dependência real, há `eslint.config.mjs`, e o CI tem passo próprio de lint (0 erros, 23 avisos) |
 | Unicidade de CPF/CNPJ | ✅ índice único normalizado (era o Ponto 1 do Gate G0) |
 | Consumo de `cliente.criado` | ✅ implementado (era o Ponto 7 do Gate G0) |
 | **Integração Asaas exercitada contra a API real** | ⛔ **NUNCA foi.** `lib/asaas.ts` existe e nenhuma chamada real foi feita. Existir arquivo não é integração que funciona |
-| **Histórico de commits** | ⚠️ um único commit inicial até 25/08/2026 — não há evolução para auditar |
+| **Histórico de commits** | ✅ **7 commits, todos publicados** em `origin/main` (`40947b2`) — ♻️ corrigido em 26/08/2026: a linha dizia *"um único commit inicial"* e subestimava o próprio repositório. A evolução de 25 e 26/08 (integração, lint de verdade, `/saude`, `L-63`, `L-64`) **é auditável** |
 | **Testes com Postgres real** | ⚠️ os testes usam um Supabase em memória: provam a regra de negócio, **não** o SQL. Constraint de banco só é exercitada rodando o schema |
 
 ---

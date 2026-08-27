@@ -9,6 +9,7 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
+    "lint:design": "node scripts/lint-design.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -22,10 +23,12 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.6",
     "@types/node": "^22.10.7",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.0.7",
     "@types/react-dom": "^19.0.3",
     "eslint": "^9.39.5",
     "eslint-config-next": "^15.5.24",
+    "pg": "^8.23.0",
     "typescript": "^5.7.3",
     "vitest": "^2.1.8"
   }

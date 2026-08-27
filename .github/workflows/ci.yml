@@ -26,6 +26,32 @@ on:
 jobs:
   verificar:
     runs-on: ubuntu-latest
+
+    # Postgres de verdade para `tests/integracao/**` — portado da Scope
+    # Dashboard em 26/08/2026.
+    #
+    # ⚠️ **O risco que isto fecha estava escrito no README deste projeto:**
+    # *"os testes usam um Supabase em memória: provam a regra de negócio, NÃO
+    # o SQL. Constraint de banco só é exercitada rodando o schema."* Com o
+    # serviço abaixo, as três constraints que sustentam a integração passam a
+    # ser verificadas: o índice funcional do documento (Ponto 1 do Gate G0), a
+    # idempotência da recorrência e a da `referencia_externa`.
+    #
+    # O schema inteiro é aplicado do zero a cada execução: isso prova de graça
+    # que `supabase/schema.sql` continua aplicável em banco vazio.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - uses: actions/checkout@v4
 
@@ -45,8 +71,27 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Testes
+      # Trava do sistema de design — portada da Scope Dashboard em 26/08/2026
+      # (Onda 0 de `docs/AGENTE-IDENTIDADE-VISUAL.md` §B.4, lá). Ela vem ANTES
+      # da refatoração visual de propósito: regra que ninguém verifica é
+      # sugestão, e a 13ª divergência nasceria durante a própria refatoração.
+      #
+      # Hex literal, `rgb()`, `hsl()`, paleta de framework, `shadow-*` e emoji
+      # decorativo em `app/` e `components/` quebram o build. O tema mora em
+      # `app/globals.css`, e é o único lugar onde cor é escrita à mão.
+      - name: Design
+        run: npm run lint:design
+
+      - name: Aplicar o schema no Postgres do CI
+        run: psql "postgresql://postgres:ci@localhost:5432/postgres" -v ON_ERROR_STOP=1 -q -f supabase/schema.sql
+
+      # Com `DATABASE_URL` presente, `tests/integracao/schema-constraints`
+      # liga sozinho — desenhado assim de propósito: teste que exige memória
+      # humana para ser ligado é teste que não roda.
+      - name: Testes (unidade + integração contra Postgres real)
         run: npm run test
+        env:
+          DATABASE_URL: postgresql://postgres:ci@localhost:5432/postgres
 
       # As variáveis do Supabase são placeholders: `createSupabaseAdmin()` só
       # as lê em tempo de execução, e nenhuma rota é pré-renderizada — por
