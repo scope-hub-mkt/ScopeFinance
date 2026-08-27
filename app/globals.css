@@ -407,6 +407,14 @@ tbody tr:hover td{background:var(--marca-lav)}
 .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--marca-lav);border-top-color:var(--marca);border-radius:50%;animation:sp .7s linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}
 .loading{display:flex;align-items:center;justify-content:center;gap:var(--e-3);padding:var(--e-10);color:var(--tinta-2)}
+/* Falha de carga: a mensagem e a saída. Herda a caixa de .loading e
+   acrescenta o que faltava — o botão que repete a tentativa. */
+.erro-carga{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--e-4);padding:var(--e-10);text-align:center}
+.erro-carga-msg{display:flex;align-items:flex-start;gap:var(--e-2);justify-content:center;max-width:56ch;line-height:1.6;color:var(--critico)}
+/* Degradação parcial: a tela está boa, um recurso não veio. Tarja, não
+   tela cheia — o conteúdo continua utilizável embaixo dela. */
+.aviso-parcial{display:flex;align-items:center;gap:var(--e-3);flex-wrap:wrap;margin-bottom:var(--e-4);padding:var(--e-3) var(--e-4);border:1px solid var(--critico-borda);border-left:3px solid var(--critico);border-radius:var(--r-1);background:var(--critico-lav);color:var(--tinta);font-size:13px;line-height:1.5}
+.aviso-parcial span{flex:1;min-width:220px}
 .toast-host{position:fixed;bottom:20px;right:20px;z-index:2000;display:flex;flex-direction:column;gap:var(--e-2);align-items:flex-end}
 .toast{background:var(--sup);border:1px solid var(--linha);border-left:3px solid var(--marca);border-radius:var(--r-1);padding:var(--e-3) var(--e-4);font-size:13px;box-shadow:var(--sombra-2);max-width:360px}
 .toast.err{border-left-color:var(--critico)}

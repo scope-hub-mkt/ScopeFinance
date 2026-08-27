@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { apurarCarga, resumoDeFalhas, type Falha } from "./carga";
 import type {
   Assinatura,
   Banco,
@@ -77,6 +78,10 @@ interface StoreCtx {
   loading: boolean;
   error: string | null;
   refresh: (key?: ResourceKey) => Promise<void>;
+  /** Recarrega tudo do zero, com o mesmo ciclo de loading/erro da carga inicial. */
+  recarregar: () => Promise<void>;
+  /** Recursos que não responderam na última carga — degradação, não queda. */
+  falhas: Falha[];
   create: <K extends ResourceKey>(key: K, data: Record<string, unknown>) => Promise<void>;
   update: <K extends ResourceKey>(key: K, id: string, data: Record<string, unknown>) => Promise<void>;
   remove: (key: ResourceKey, id: string) => Promise<void>;
@@ -110,6 +115,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [db, setDb] = useState<DB>(EMPTY);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [falhas, setFalhas] = useState<Falha[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const toastId = useRef(0);
 
@@ -122,19 +128,50 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const refresh = useCallback(
     async (key?: ResourceKey) => {
       const keys = key ? [key] : RESOURCE_KEYS;
-      const results = await Promise.all(
-        keys.map(async (k) => [k, await apiFetch<unknown[]>(`/api/${k}`)] as const)
+      // `allSettled` e não `all`: ver lib/carga.ts para o incidente que a
+      // troca fecha. Um recurso quebrado degrada a tela; não a apaga.
+      const resultados = await Promise.allSettled(
+        keys.map((k) => apiFetch<unknown[]>(`/api/${k}`))
       );
+      const { dados, falhas: novas, queda } = apurarCarga(keys, resultados);
+
       setDb((prev) => {
         const next = { ...prev } as DB;
-        for (const [k, rows] of results) {
+        for (const [k, rows] of dados) {
           (next as unknown as Record<string, unknown[]>)[k] = rows;
         }
         return next;
       });
+
+      // As falhas dos recursos que ACABARAM de ser pedidos substituem as
+      // anteriores; as dos que não entraram nesta passada continuam valendo.
+      setFalhas((antes) => [...antes.filter((f) => !keys.includes(f.recurso as ResourceKey)), ...novas]);
+
+      if (queda) throw new Error(resumoDeFalhas(novas));
     },
     []
   );
+
+  /**
+   * A carga inicial e o botão "Tentar novamente" são a MESMA função.
+   *
+   * Antes, falhar aqui era beco sem saída: a tela ficava no erro e a única
+   * saída era o F5. Como a falha que mais aparece é transitória (o `PGRST303`
+   * tratado em lib/supabase/retentativa.ts, que sobrevive a quatro tentativas
+   * do servidor só num dia ruim), não oferecer a segunda chance transformava
+   * um soluço de 2s numa página morta.
+   */
+  const carregar = useCallback(async () => {
+    try {
+      setLoading(true);
+      await refresh();
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao carregar dados");
+    } finally {
+      setLoading(false);
+    }
+  }, [refresh]);
 
   useEffect(() => {
     let active = true;
@@ -262,10 +299,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo<StoreCtx>(
     () => ({
-      db, loading, error, refresh, create, update, remove,
+      db, loading, error, falhas, refresh, recarregar: carregar, create, update, remove,
       pagar, gerarRecorrencias, emitirNF, getCN, getBN, notify,
     }),
-    [db, loading, error, refresh, create, update, remove, pagar, gerarRecorrencias, emitirNF, getCN, getBN, notify]
+    [db, loading, error, falhas, refresh, carregar, create, update, remove, pagar, gerarRecorrencias, emitirNF, getCN, getBN, notify]
   );
 
   return (
