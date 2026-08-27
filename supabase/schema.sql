@@ -339,3 +339,117 @@ begin
     execute format('create policy "auth_all" on %I for all to authenticated using (true) with check (true)', t);
   end loop;
 end $$;
+
+-- ════════════════════════ FISCAL — RF-60, RF-61, RN-43 ════════════════════════
+--
+-- ⚖️ Por que estas duas tabelas existem, e por que só uma tem vigência.
+--
+-- Até 27/08/2026 as alíquotas da NFS-e viviam em `ASAAS_NF_*` — variável de
+-- ambiente, **sem data nenhuma**. O problema não é a inconveniência do
+-- redeploy: é que uma alíquota sem vigência **reescreve nota já emitida**.
+-- Corrigir o ISS de 3% para 5% hoje passaria a calcular agosto a 5%, e um mês
+-- fechado que muda sozinho é defeito de auditoria, não de configuração.
+--
+-- O modelo aqui é cópia deliberada do que a Dashboard já provou em `RF-53`
+-- (`retencoes_fiscais` lá): alíquota + vigência datada, e o cálculo lê a
+-- vigência **da data do fato gerador**. `RN-43` generaliza a regra para os
+-- dois sistemas.
+--
+-- ⛔ `config_fiscal` NÃO tem vigência, e a assimetria é intencional (`RF-61`):
+-- o código de serviço municipal muda quando o município troca de tabela, não
+-- por competência. Versioná-lo por data seria cerimônia sem auditoria a
+-- proteger — é N2, e N2 é o nível certo para ele.
+
+create table if not exists retencoes_fiscais (
+  id              uuid primary key default gen_random_uuid(),
+  sigla           text not null,          -- ISS, COFINS, CSLL, INSS, IR, PIS
+  nome            text not null,
+  percentual      numeric(6,3) not null check (percentual >= 0 and percentual <= 100),
+  -- `retido` cobre o `retainIss` do Asaas: para o ISS, "quanto" e "retido na
+  -- fonte" são duas perguntas, e a segunda também muda por vigência.
+  retido          boolean not null default false,
+  vigencia_inicio date not null,
+  vigencia_fim    date,
+  municipio       text,
+  observacao      text,
+  ativo           boolean not null default true,
+  criado_por      text,
+  criado_em       timestamptz not null default now()
+);
+create index if not exists idx_retencoes_vigencia
+  on retencoes_fiscais (vigencia_inicio desc);
+
+-- ⚠️ NENHUMA retenção é semeada, pela mesma razão que a Dashboard não semeia:
+-- quais incidem, e com que alíquota, é dado que só o contador tem. Semear "as
+-- usuais" faria o sistema reter imposto que talvez não exista. Sem cadastro, a
+-- emissão cai no fallback de `ASAAS_NF_*` e **declara** que caiu.
+
+create table if not exists config_fiscal (
+  id                       int primary key default 1 check (id = 1),
+  municipal_service_code   text,
+  municipal_service_id     text,
+  municipal_service_name   text,
+  atualizado_por           text,
+  atualizado_em            timestamptz not null default now()
+);
+
+-- RLS — mesmo tratamento das demais.
+do $$
+declare t text;
+begin
+  foreach t in array array['retencoes_fiscais','config_fiscal']
+  loop
+    execute format('alter table %I enable row level security', t);
+    execute format('drop policy if exists "auth_all" on %I', t);
+    execute format('create policy "auth_all" on %I for all to authenticated using (true) with check (true)', t);
+  end loop;
+end $$;
+
+-- ═══════════════════ CICLOS DE RECORRÊNCIA — RF-63 ═══════════════════
+--
+-- ⚖️ Fecha `C-4` do PLANO-UNIFICADO-SCOPE.md §5 — a última das quatro da
+-- régua, e a única que continuava em N0. Até 27/08/2026 o ciclo era um
+-- ternário em `lib/format.ts`: vender um plano semestral exigia editar
+-- código e fazer deploy.
+--
+-- ⛔ SEM VIGÊNCIA, e a assimetria com `retencoes_fiscais` é deliberada.
+-- Alíquota sem vigência reescreve nota já emitida; definição de ciclo não
+-- reescreve conta nenhuma, porque cada conta gerada guarda a própria
+-- `competencia` e o próprio `vencimento`. É N2, e N2 é o nível certo.
+--
+-- ⚠️ NADA é semeado aqui. `mensal`/`trimestral`/`anual` vivem em
+-- `CICLOS_EMBUTIDOS` (lib/ciclos.ts) e são o PISO: o sistema funciona com a
+-- tabela vazia — ou inexistente. O cadastro SOBREPÕE por `chave`, nunca
+-- mescla (mesma decisão de `D-52` no fiscal): cadastrar `mensal` com
+-- `dia-fixo: 5` substitui o mensal embutido.
+
+create table if not exists ciclos_recorrencia (
+  id               uuid primary key default gen_random_uuid(),
+  -- O que vai em `assinaturas.ciclo`. Único: duas linhas com a mesma chave
+  -- significa que ninguém sabe de quantos meses é o ciclo.
+  chave            text not null unique,
+  nome             text not null,
+  meses            int  not null check (meses >= 1 and meses <= 120),
+  -- 'mesmo-dia' | 'dia-fixo' | 'ultimo-dia'
+  regra_vencimento text not null default 'mesmo-dia'
+                   check (regra_vencimento in ('mesmo-dia', 'dia-fixo', 'ultimo-dia')),
+  -- Só para 'dia-fixo'. 31 é aceito e LIMITADO ao último dia do mês destino
+  -- pelo código — 31 em fevereiro vira 28/29, nunca 3 de março.
+  dia              int check (dia is null or (dia >= 1 and dia <= 31)),
+  ativo            boolean not null default true,
+  atualizado_por   text,
+  atualizado_em    timestamptz not null default now()
+);
+
+-- 'dia-fixo' sem dia é um ciclo que não sabe quando vence. A trava é no
+-- banco porque a UI não é o único caminho de escrita.
+alter table ciclos_recorrencia drop constraint if exists ciclo_dia_fixo_tem_dia;
+alter table ciclos_recorrencia add constraint ciclo_dia_fixo_tem_dia
+  check (regra_vencimento <> 'dia-fixo' or dia is not null);
+
+do $$
+begin
+  execute 'alter table ciclos_recorrencia enable row level security';
+  execute 'drop policy if exists "auth_all" on ciclos_recorrencia';
+  execute 'create policy "auth_all" on ciclos_recorrencia for all to authenticated using (true) with check (true)';
+end $$;

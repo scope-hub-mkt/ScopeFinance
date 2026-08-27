@@ -150,3 +150,24 @@ export interface NotaFiscal {
   created_at: string;
   updated_at: string;
 }
+
+/**
+ * Uma retenção fiscal cadastrada — `RF-60`, `RN-43`.
+ *
+ * ⚖️ A vigência é o que separa **corrigir** de **versionar**: sem ela, mudar a
+ * alíquota reescreve nota já emitida. Ver `lib/fiscal.ts`.
+ */
+export interface RetencaoFiscal {
+  id: string;
+  sigla: string;
+  nome: string;
+  percentual: number;
+  retido: boolean;
+  vigencia_inicio: string;
+  vigencia_fim: string | null;
+  municipio: string | null;
+  observacao: string | null;
+  ativo: boolean;
+  criado_por: string | null;
+  criado_em?: string;
+}

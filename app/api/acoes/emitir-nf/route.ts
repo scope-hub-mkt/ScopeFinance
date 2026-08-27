@@ -12,6 +12,12 @@ import {
   defaultTaxes,
   type AsaasInvoiceTaxes,
 } from "@/lib/asaas";
+import {
+  dataDoFatoGerador,
+  lerConfigFiscal,
+  listarRetencoes,
+  tributosEm,
+} from "@/lib/fiscal";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +55,9 @@ export async function POST(req: NextRequest) {
     let clienteId = body.cliente_id ?? null;
     let valor = body.valor ?? 0;
     let descricao = body.descricao_servico ?? "";
+    // A conta sobrevive ao bloco abaixo porque é dela que sai a data do fato
+    // gerador (`RN-43`) — sem isso, a alíquota lida seria a de hoje.
+    let contaFiscal: { pago_em?: string | null; vencimento?: string | null } | null = null;
 
     if (body.conta_receber_id) {
       const { data: conta, error } = await supabase
@@ -60,6 +69,7 @@ export async function POST(req: NextRequest) {
       clienteId = clienteId || conta.cliente_id;
       valor = valor || Number(conta.valor);
       descricao = descricao || conta.descricao;
+      contaFiscal = conta;
     }
 
     if (!clienteId) return fail("Informe o cliente (cliente_id) ou uma conta a receber", 400);
@@ -105,6 +115,19 @@ export async function POST(req: NextRequest) {
       await supabase.from("clientes").update({ asaas_customer_id: asaasCustomerId }).eq("id", cliente.id);
     }
 
+    // 4.5) Resolve o fiscal pela regra VIGENTE NA DATA DO FATO GERADOR — `RF-60`,
+    // `RN-43`. ⛔ Não é a alíquota de hoje: emitir hoje a nota de um
+    // recebimento de junho com a alíquota de hoje é o defeito de auditoria que
+    // a regra proíbe. Ordem do fato gerador: pagamento → vencimento → hoje.
+    const dataFato = dataDoFatoGerador(contaFiscal, today());
+    const [retencoes, config] = await Promise.all([listarRetencoes(), lerConfigFiscal()]);
+    const tributos = tributosEm(retencoes, dataFato);
+
+    // ⚠️ `effectiveDate` continua sendo HOJE de propósito: é a data de emissão
+    // da nota, não a do fato gerador. As duas coincidem no caso comum e
+    // divergem exatamente no caso que motivou `RF-60` — a alíquota segue a
+    // segunda, a emissão segue a primeira. Se o contador exigir que a nota saia
+    // datada no fato gerador, é uma linha aqui e uma decisão do dono.
     // 5) Cria a nota fiscal no Asaas
     const invoice = await createInvoice({
       customer: asaasCustomerId,
@@ -113,8 +136,11 @@ export async function POST(req: NextRequest) {
       externalReference: nota.id,
       value: valor,
       effectiveDate: today(),
-      municipalServiceCode: body.municipalServiceCode || defaultMunicipalServiceCode(),
-      taxes: { ...defaultTaxes(), ...(body.taxes || {}) },
+      municipalServiceCode:
+        body.municipalServiceCode || config?.municipal_service_code || defaultMunicipalServiceCode(),
+      municipalServiceId: config?.municipal_service_id || undefined,
+      municipalServiceName: config?.municipal_service_name || undefined,
+      taxes: { ...tributos.taxes, ...(body.taxes || {}) },
     });
 
     await supabase

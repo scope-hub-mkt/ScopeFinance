@@ -19,6 +19,7 @@ import type {
   Contrato,
   Lancamento,
   NotaFiscal,
+  RetencaoFiscal,
 } from "./types";
 
 export interface DB {
@@ -31,6 +32,7 @@ export interface DB {
   bancos: Banco[];
   cartoes: Cartao[];
   notas_fiscais: NotaFiscal[];
+  retencoes_fiscais: RetencaoFiscal[];
 }
 
 export type ResourceKey = keyof DB;
@@ -45,6 +47,7 @@ const EMPTY: DB = {
   bancos: [],
   cartoes: [],
   notas_fiscais: [],
+  retencoes_fiscais: [],
 };
 
 const RESOURCE_KEYS = Object.keys(EMPTY) as ResourceKey[];

@@ -11,7 +11,8 @@ export type ResourceName =
   | "contas_receber"
   | "contas_pagar"
   | "lancamentos"
-  | "notas_fiscais";
+  | "notas_fiscais"
+  | "retencoes_fiscais";
 
 interface ResourceConfig {
   columns: string[]; // colunas graváveis (POST/PATCH)
@@ -106,6 +107,21 @@ export const RESOURCES: Record<ResourceName, ResourceConfig> = {
     orderBy: "created_at",
     ascending: false,
     numeric: ["valor"],
+    integer: [],
+  },
+  retencoes_fiscais: {
+    // `RF-60`/`RN-43` — a alíquota é cadastro, e cadastro fiscal é DATADO.
+    // ⛔ `criado_em` fica de fora: é carimbo do banco, e uma tela capaz de
+    // reescrevê-lo apagaria a única marca de quando a regra foi declarada.
+    columns: [
+      "sigla", "nome", "percentual", "retido",
+      "vigencia_inicio", "vigencia_fim", "municipio", "observacao", "ativo", "criado_por",
+    ],
+    // Mais recente primeiro: quem abre a tela quer ver a regra que vale hoje,
+    // e o histórico logo abaixo dela.
+    orderBy: "vigencia_inicio",
+    ascending: false,
+    numeric: ["percentual"],
     integer: [],
   },
 };

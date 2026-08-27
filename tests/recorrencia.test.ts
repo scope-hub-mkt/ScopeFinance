@@ -169,11 +169,18 @@ describe("helpers de data — a aritmética que o motor usa", () => {
   });
 
   it("31 de janeiro + 1 mês não vira 3 de março", () => {
-    // `Date.setMonth` estoura para março quando o mês destino é mais curto.
-    // Documentar o comportamento real vale mais que fingir que ele não existe:
-    // uma assinatura com vencimento no dia 31 caminha de forma irregular.
+    // ♻️ 27/08/2026, `RF-63`: este caso mudou de asserção, não de título.
+    //
+    // O título sempre afirmou o comportamento CERTO; a asserção exigia
+    // `2026-03-03` e um comentário explicava que documentar o defeito valia
+    // mais que fingir que ele não existia. Valia — até haver como consertá-lo.
+    //
+    // ⛔ O defeito não era estético: `Date.setMonth(+1)` sobre 31/jan pula
+    // fevereiro INTEIRO, e uma assinatura mensal vencendo no dia 31 deixava
+    // de ser cobrada em ~5 competências por ano. `avancar()` limita o dia ao
+    // último do mês destino.
     const r = advanceByCiclo("2026-01-31", "mensal");
-    expect(r).toBe("2026-03-03");
+    expect(r).toBe("2026-02-28");
   });
 
   it("competência é sempre o dia 1 do mês", () => {

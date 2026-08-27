@@ -122,7 +122,19 @@ export function getInvoice(id: string): Promise<AsaasInvoice> {
   return asaasRequest<AsaasInvoice>(`/invoices/${id}`, "GET");
 }
 
-/** Defaults de tributos vindos do ambiente (podem ser sobrescritos por requisição). */
+/**
+ * Defaults de tributos vindos do ambiente.
+ *
+ * ⛔ **Isto deixou de ser a autoridade fiscal em 27/08/2026** (`RF-60`). A
+ * alíquota que vale é a **cadastrada com vigência**, resolvida por
+ * `tributosEm()` de `lib/fiscal.ts` a partir da **data do fato gerador**.
+ * Esta função continua existindo como o **fallback declarado**, para o caso de
+ * nada haver cadastrado — e é `lib/fiscal.ts` quem decide quando chamá-la.
+ *
+ * ⚠️ **Não chame daqui para montar uma nota.** Ler o ambiente direto devolve a
+ * alíquota de **hoje**, e emitir hoje a nota de um recebimento de junho com a
+ * alíquota de hoje é o defeito de auditoria que `RN-43` proíbe.
+ */
 export function defaultTaxes(): AsaasInvoiceTaxes {
   const num = (v: string | undefined) => (v ? Number(v) : 0);
   return {
@@ -136,6 +148,14 @@ export function defaultTaxes(): AsaasInvoiceTaxes {
   };
 }
 
+/**
+ * Código de serviço municipal vindo do ambiente.
+ *
+ * ⛔ **Fallback, não autoridade** (`RF-61`, 27/08/2026): o valor que vale é o
+ * cadastrado em `config_fiscal`, lido por `lerConfigFiscal()` de
+ * `lib/fiscal.ts`. O dono já decidiu uma vez que isto é configuração de
+ * negócio; esta função é o que responde enquanto ninguém cadastrou.
+ */
 export function defaultMunicipalServiceCode(): string | undefined {
   return process.env.ASAAS_NF_MUNICIPAL_SERVICE_CODE || undefined;
 }

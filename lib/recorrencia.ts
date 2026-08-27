@@ -1,6 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { advanceByCiclo, competencia, today } from "./format";
+import { competencia, today } from "./format";
+import { avancar, lerCiclos, resolverCiclo } from "./ciclos";
 
 export interface RecorrenciaResult {
   geradas: number;
@@ -26,7 +27,8 @@ function isDuplicate(err: { code?: string; message?: string }): boolean {
  * Para cada assinatura ATIVA cuja `proximo_venc` <= data de referência:
  *  - direcao = 'receber' → cria uma cobrança em CONTAS A RECEBER
  *  - direcao = 'pagar'   → cria uma conta em CONTAS A PAGAR
- *  - avança `proximo_venc` pelo ciclo (mensal/trimestral/anual)
+ *  - avança `proximo_venc` pelo ciclo CADASTRADO (`RF-63`), caindo nos três
+ *    embutidos quando não há cadastro
  *
  * Idempotente: a constraint UNIQUE(assinatura_id, competencia) evita duplicar
  * a conta do mesmo período, então rodar duas vezes não gera cobranças repetidas.
@@ -36,6 +38,12 @@ export async function gerarRecorrencias(
   ref: string = today()
 ): Promise<RecorrenciaResult> {
   const result: RecorrenciaResult = { geradas: 0, receber: 0, pagar: 0, detalhes: [] };
+
+  // `RF-63` — os ciclos vêm do cadastro, e são lidos UMA vez por execução.
+  // Ler por assinatura faria N consultas para responder sempre o mesmo; ler
+  // aqui também garante que todas as assinaturas de uma mesma rodada usem a
+  // mesma definição, mesmo que alguém edite um ciclo no meio dela.
+  const ciclos = await lerCiclos(supabase);
 
   const { data: assinaturas, error } = await supabase
     .from("assinaturas")
@@ -95,7 +103,7 @@ export async function gerarRecorrencias(
         }
       }
 
-      prox = advanceByCiclo(prox, a.ciclo);
+      prox = avancar(prox, resolverCiclo(a.ciclo, ciclos));
     }
 
     if (prox !== a.proximo_venc) {

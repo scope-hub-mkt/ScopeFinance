@@ -67,9 +67,14 @@ describe("colunas deliberadamente NÃO graváveis pela tela", () => {
 });
 
 describe("isResource", () => {
-  it("reconhece as 9 tabelas e recusa o resto", () => {
-    expect(Object.keys(RESOURCES)).toHaveLength(9);
+  it("reconhece as 10 tabelas e recusa o resto", () => {
+    // ♻️ Era 9 até 27/08/2026, quando `retencoes_fiscais` entrou com `RF-60`.
+    // ⚖️ O número é a trava: recurso novo é CRUD novo exposto pela API, e
+    // subir este contador precisa ser um ato que alguém vê na revisão — nunca
+    // um efeito colateral de mexer em `lib/resources.ts`.
+    expect(Object.keys(RESOURCES)).toHaveLength(10);
     expect(isResource("clientes")).toBe(true);
+    expect(isResource("retencoes_fiscais")).toBe(true);
     // `integracao` tem rotas ESTÁTICAS que precedem o CRUD genérico; se um dia
     // alguém a tornar recurso, a chave de integração viraria CRUD irrestrito.
     expect(isResource("integracao")).toBe(false);
