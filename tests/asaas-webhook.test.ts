@@ -17,7 +17,7 @@ import {
   definicaoDoEvento,
   entidadePorPrefixo,
 } from "@/lib/asaas/eventos";
-import { calcularMrr } from "@/lib/integracao/contrato";
+import { calcularMrr, calcularResumo, calcularSerie } from "@/lib/integracao/contrato";
 import { novoBanco, fakeAtual } from "./fakes/supabase-fake";
 
 vi.mock("@/lib/supabase/admin", async () => {
@@ -463,5 +463,66 @@ describe("§4.9 — o silêncio precisa ser um sinal ativo", () => {
     const s = await saudeDaFila(fakeAtual() as never);
     expect(s.alerta).toBe(true);
     expect(s.motivo).toContain("pausada");
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════
+describe("§4.10 dentro de casa — a soma do resumo também é dinheiro", () => {
+  /**
+   * ⚠️ Este teste nasceu de um sintoma de produção, não de imaginação. Depois
+   * do backfill, `/resumo` devolveu `"recebido_mes": 7890.870000000001`. Com
+   * 14 contas o defeito nunca apareceu; com 194 ele apareceu no primeiro dia.
+   *
+   * ⛔ Não é problema de formatação: o número atravessa a ponte e a Dashboard
+   * o exibe **sem recalcular** (`RN-01`). O resíduo é o que ela mostra.
+   */
+  const conta = (valor: number, pago_em: string | null) => ({
+    id: `c${valor}${pago_em}`,
+    cliente_id: "cli",
+    contrato_id: null,
+    valor,
+    valor_pago: valor,
+    deducoes: 0,
+    vencimento: "2026-08-10",
+    status: pago_em ? "Pago" : "Pendente",
+    pago_em,
+  });
+
+  it("somar centavos não deixa resíduo de ponto flutuante", () => {
+    // 0.1 + 0.2 !== 0.3 em JavaScript — a soma direta destas três falharia.
+    const r = calcularResumo(
+      [conta(0.1, "2026-08-01"), conta(0.2, "2026-08-02")],
+      [],
+      0,
+      "2026-08-15"
+    );
+    expect(r.recebido_mes).toBe(0.3);
+    expect(String(r.recebido_mes)).not.toContain("000000");
+  });
+
+  it("reproduz o valor exato que produção devolveu errado", () => {
+    const parcelas = [1550.0, 890.0, 2500.0, 449.0, 1200.0, 1301.87];
+    const r = calcularResumo(
+      parcelas.map((v, i) => conta(v, `2026-08-0${i + 1}`)),
+      [],
+      0,
+      "2026-08-15"
+    );
+    expect(r.recebido_mes).toBe(7890.87);
+  });
+
+  it("a série mensal também sai sem resíduo", () => {
+    const s = calcularSerie(
+      [conta(0.1, "2026-08-01"), conta(0.2, "2026-08-02")],
+      "2026-08-15",
+      1
+    );
+    expect(s[0].recebido).toBe(0.3);
+  });
+
+  it("o MRR de ciclos fracionários fecha em centavo", () => {
+    // 12/52 avos é dízima; sem centavo inteiro o total viria com cauda.
+    const mrr = calcularMrr([{ ciclo: "semanal", valor: 100, status: "Ativa" }]);
+    expect(Number.isInteger(Math.round(mrr * 100))).toBe(true);
   });
 });

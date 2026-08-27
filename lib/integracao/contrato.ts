@@ -90,6 +90,23 @@ export interface LinhaCliente {
 const num = (v: number | string | null | undefined): number => Number(v ?? 0) || 0;
 
 /**
+ * Dinheiro em **centavos inteiros**, para somar sem erro de ponto flutuante.
+ *
+ * ⚠️ **O sintoma que trouxe isto para cá, medido em 28/08/2026.** Depois do
+ * backfill do Asaas, `/resumo` passou a devolver
+ * `"recebido_mes": 7890.870000000001`. Com 14 contas o defeito nunca apareceu;
+ * com 194 ele apareceu no primeiro dia. Somar `0.1 + 0.2` em JavaScript não dá
+ * `0.3`, e cada parcela acrescenta um resíduo.
+ *
+ * ⛔ Não é problema de formatação. Este número atravessa a ponte e a Dashboard
+ * o exibe **sem recalcular** (`RN-01`) — o resíduo é o que ela mostra, e o
+ * total do relatório passa a divergir do extrato por centavos que ninguém
+ * consegue explicar. É a armadilha 2 do §4.10 do plano, do lado de dentro.
+ */
+const cents = (v: number | string | null | undefined): number => Math.round(num(v) * 100);
+const reais = (c: number): number => c / 100;
+
+/**
  * O que a Scope realmente recebeu numa conta baixada.
  *
  * `valor_pago` só existe quando alguém informou na baixa; sem ele, o valor
@@ -167,7 +184,8 @@ export const MESES_POR_CICLO: Record<string, number> = {
 
 /** Receita recorrente mensal — todo ciclo normalizado para o mês. */
 export function calcularMrr(assinaturas: LinhaAssinatura[]): number {
-  return assinaturas
+  return reais(
+    assinaturas
     .filter((a) => a.status === "Ativa")
     .reduce((soma, a) => {
       // Ciclo que ninguém cadastrou cai em mensal, que é o comportamento
@@ -176,8 +194,9 @@ export function calcularMrr(assinaturas: LinhaAssinatura[]): number {
       // caminho que evita o palpite é `cicloDoAsaas`, que recusa gravar ciclo
       // que não reconhece.
       const meses = MESES_POR_CICLO[a.ciclo] ?? 1;
-      return soma + num(a.valor) / meses;
-    }, 0);
+      return soma + Math.round(cents(a.valor) / meses);
+    }, 0)
+  );
 }
 
 /** Último dia do mês de uma data ISO — usado como teto da janela do mês. */
@@ -202,28 +221,29 @@ export function calcularResumo(
 ): ResumoContrato {
   const inicioMes = hoje.slice(0, 7) + "-01";
   const fimMes = fimDoMes(hoje);
-  let faturamento_mes = 0;
-  let recebido_mes = 0;
-  let inadimplencia = 0;
+  // ⛔ Acumuladores em CENTAVOS INTEIROS — ver `cents` acima.
+  let faturamento = 0;
+  let recebido = 0;
+  let inadimplente = 0;
 
   for (const c of receber) {
     if (c.vencimento && c.vencimento >= inicioMes && c.vencimento <= fimMes) {
-      faturamento_mes += num(c.valor);
+      faturamento += cents(c.valor);
     }
     if (c.status === "Pago" && c.pago_em && c.pago_em >= inicioMes) {
-      recebido_mes += valorRecebido(c);
+      recebido += cents(valorRecebido(c));
     }
     // Vencida e não baixada. Cancelada NÃO é inadimplência — é conta que
     // deixou de existir, e somá-la inflaria o vermelho do painel de lá.
     if (c.status !== "Pago" && c.status !== "Cancelado" && c.vencimento && c.vencimento < hoje) {
-      inadimplencia += num(c.valor);
+      inadimplente += cents(c.valor);
     }
   }
 
   return {
-    faturamento_mes,
-    recebido_mes,
-    inadimplencia,
+    faturamento_mes: reais(faturamento),
+    recebido_mes: reais(recebido),
+    inadimplencia: reais(inadimplente),
     mrr: calcularMrr(assinaturas),
     clientes_ativos: clientesAtivos,
     fonte: FONTE,
@@ -259,15 +279,20 @@ export function calcularSerie(
   for (const c of receber) {
     if (c.vencimento) {
       const alvo = mapa.get(c.vencimento.slice(0, 7));
-      if (alvo) alvo.faturamento += num(c.valor);
+      if (alvo) alvo.faturamento += cents(c.valor);
     }
     if (c.status === "Pago" && c.pago_em) {
       const alvo = mapa.get(c.pago_em.slice(0, 7));
-      if (alvo) alvo.recebido += valorRecebido(c);
+      if (alvo) alvo.recebido += cents(valorRecebido(c));
     }
   }
 
-  return [...mapa.values()];
+  // Os pontos acumularam em centavos; a série sai em reais, sem resíduo.
+  return [...mapa.values()].map((p) => ({
+    periodo: p.periodo,
+    faturamento: reais(p.faturamento),
+    recebido: reais(p.recebido),
+  }));
 }
 
 // ─── Eventos ────────────────────────────────────────────────────────
