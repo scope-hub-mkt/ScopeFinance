@@ -1,0 +1,508 @@
+import "server-only";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { listarPagina } from "../asaas";
+import { clienteDoAsaas, linhaDaAssinatura, linhaDaCobranca, linhaDaNota } from "./mapear";
+import { asaasParaDataLocal } from "./webhook";
+
+/**
+ * O backfill: trazer para o ScopeFinance o que o gateway já sabia antes de o
+ * webhook existir.
+ *
+ * ⚖️ **Por que ele é obrigatório e não um extra.** Medido em 28/08/2026: a
+ * conta de produção do Asaas tem **22 clientes, 180 cobranças, 7 assinaturas e
+ * 51 notas autorizadas**; este banco tinha 14 contas a receber e **nenhuma**
+ * linha com vínculo Asaas. O webhook resolve o futuro e não toca no passado —
+ * ligar só ele deixaria faturamento, MRR e inadimplência exibidos na Dashboard
+ * sem relação nenhuma com o dinheiro que passou pelo gateway. E números que
+ * ninguém consegue explicar corroem a confiança no painel inteiro.
+ *
+ * ⛔ **As três regras que este arquivo não quebra:**
+ *
+ *   1. **Nunca funde cliente.** Documento que já pertence a outro cadastro é
+ *      recusa declarada (§2.4), reportada linha a linha. Escolher sozinho qual
+ *      dos dois vale é escolher uma verdade para apagar — e aqui a verdade
+ *      apagada pode ter nota fiscal emitida contra ela.
+ *   2. **Nunca apaga.** Cliente que existe aqui e não no Asaas fica. A
+ *      ausência num sistema não é ordem de exclusão no outro (`ESTADO §5.4`).
+ *   3. **Nunca sobrescreve `valor_contratado`.** Ele é o combinado com o
+ *      cliente, dono é o ScopeFinance (`RN-03`); o gateway só informa o
+ *      cobrado (§4.7).
+ *
+ * A tradução dos objetos é a de `mapear.ts` — a MESMA que o webhook usa. Duas
+ * traduções divergiriam, e a divergência só apareceria num relatório meses
+ * depois, sem ninguém saber qual das duas está certa.
+ */
+
+export type Etapa = "clientes" | "assinaturas" | "cobrancas" | "notas" | "religar";
+
+export interface Conflito {
+  etapa: Etapa;
+  asaas_id: string;
+  documento?: string | null;
+  nome?: string;
+  motivo: string;
+}
+
+export interface ResultadoEtapa {
+  etapa: Etapa;
+  offset: number;
+  lidos: number;
+  criados: number;
+  vinculados: number;
+  atualizados: number;
+  ignorados: number;
+  conflitos: Conflito[];
+  /** `true` quando ainda há página depois desta. */
+  tem_mais: boolean;
+  proximo_offset: number | null;
+  /** `true` quando nada foi gravado — a passada de conferência. */
+  seco: boolean;
+}
+
+function vazio(etapa: Etapa, offset: number, seco: boolean): ResultadoEtapa {
+  return {
+    etapa,
+    offset,
+    lidos: 0,
+    criados: 0,
+    vinculados: 0,
+    atualizados: 0,
+    ignorados: 0,
+    conflitos: [],
+    tem_mais: false,
+    proximo_offset: null,
+    seco,
+  };
+}
+
+/**
+ * Os campos que o gateway tem autoridade para atualizar num cliente que já
+ * existe: contato e vínculo. Nunca procedência, nunca estado do cadastro.
+ */
+function somenteContato(linha: Record<string, unknown>): Record<string, unknown> {
+  const permitidos = [
+    "nome",
+    "cpf",
+    "cnpj",
+    "razao_social",
+    "email",
+    "tel",
+    "asaas_customer_id",
+    "sincronizado_em",
+  ];
+  const saida: Record<string, unknown> = {};
+  for (const c of permitidos) if (c in linha) saida[c] = linha[c];
+  return saida;
+}
+
+export interface OpcoesBackfill {
+  offset?: number;
+  limite?: number;
+  /** `true` conta o que faria e **não grava nada** — sempre rode assim antes. */
+  seco?: boolean;
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  1. Clientes — a etapa que exige decisão, e por isso vem primeiro
+// ════════════════════════════════════════════════════════════════════
+
+/**
+ * Concilia os `customer` do Asaas com o cadastro daqui.
+ *
+ * Quatro desfechos possíveis, e a ordem entre eles importa:
+ *
+ *   **já vinculado** → o `asaas_customer_id` bate; atualiza contato e segue.
+ *   **vinculado agora** → o documento existe aqui e o cadastro ainda não tinha
+ *     `asaas_customer_id`; grava o vínculo. É o caso bom: reconhecemos o mesmo
+ *     cliente pelos dígitos, e nenhuma linha nova nasce.
+ *   **criado** → documento inédito; nasce cliente com `origem = 'asaas'`.
+ *   **conflito** → o documento já pertence a um cadastro que aponta para
+ *     OUTRO `customer` do Asaas. Não funde, não cria, não escolhe. Reporta.
+ *
+ * ⚠️ **O conflito não é hipotético: ele existe na origem.** Medido em
+ * 28/08/2026, dois `customer` diferentes do Asaas carregam o mesmo CNPJ
+ * `32854081000183`. O primeiro vincula; o segundo é recusado por escrito, e
+ * alguém decide. O índice único de `documento_principal` recusaria de qualquer
+ * forma — mas com uma mensagem de banco, não com um relatório que diz o que
+ * fazer a respeito.
+ */
+export async function backfillClientes(
+  supabase: SupabaseClient,
+  opts: OpcoesBackfill = {}
+): Promise<ResultadoEtapa> {
+  const offset = opts.offset ?? 0;
+  const seco = opts.seco ?? false;
+  const r = vazio("clientes", offset, seco);
+
+  const pagina = await listarPagina<Record<string, unknown>>("/customers", offset, opts.limite ?? 100);
+  r.lidos = pagina.data.length;
+  r.tem_mais = pagina.hasMore;
+  r.proximo_offset = pagina.hasMore ? offset + pagina.data.length : null;
+
+  for (const bruto of pagina.data) {
+    const { linha, documento, asaasId } = clienteDoAsaas(bruto);
+    if (!asaasId) {
+      r.ignorados++;
+      continue;
+    }
+
+    const { data: porAsaas } = await supabase
+      .from("clientes")
+      .select("id")
+      .eq("asaas_customer_id", asaasId)
+      .maybeSingle();
+
+    if (porAsaas) {
+      if (!seco) {
+        // ⛔ `status_cadastro` e `origem` ficam FORA do update: o cliente já
+        // existia aqui e pode ter nascido pelo CRM ou pela Dashboard.
+        // Reescrever a procedência apagaria a única marca de onde ele veio —
+        // é a mesma razão pela qual `lib/resources.ts` mantém `origem` fora
+        // das colunas graváveis pela tela.
+        await supabase
+          .from("clientes")
+          .update(somenteContato(linha))
+          .eq("id", (porAsaas as { id: string }).id);
+      }
+      r.atualizados++;
+      continue;
+    }
+
+    if (!documento) {
+      // Sem documento não há identidade, e sem identidade não há conciliação
+      // possível. Nasce provisório: aparece na fila, e o §2.3 o impede de
+      // gerar cobrança ou nota até alguém completar o cadastro.
+      if (!seco) {
+        const { error } = await supabase.from("clientes").insert(linha);
+        if (error) {
+          r.conflitos.push({
+            etapa: "clientes",
+            asaas_id: asaasId,
+            documento: null,
+            nome: String(linha.nome),
+            motivo: error.message,
+          });
+          continue;
+        }
+      }
+      r.criados++;
+      continue;
+    }
+
+    const { data: porDoc } = await supabase
+      .from("clientes")
+      .select("id, nome, asaas_customer_id")
+      .eq("documento_principal", documento)
+      .maybeSingle();
+
+    if (porDoc) {
+      const alvo = porDoc as { id: string; nome: string; asaas_customer_id: string | null };
+      if (alvo.asaas_customer_id && alvo.asaas_customer_id !== asaasId) {
+        // ⛔ Recusa declarada, nunca fusão silenciosa (§2.4 / `ESTADO §8.6`).
+        r.conflitos.push({
+          etapa: "clientes",
+          asaas_id: asaasId,
+          documento,
+          nome: String(linha.nome),
+          motivo:
+            `o documento ${documento} já pertence ao cliente ${alvo.id} ("${alvo.nome}"), ` +
+            `que está vinculado a OUTRO customer do Asaas (${alvo.asaas_customer_id}). ` +
+            `Dois cadastros do gateway para a mesma empresa — decisão humana.`,
+        });
+        if (!seco) {
+          await supabase.from("clientes").update({ status_cadastro: "em_conflito" }).eq("id", alvo.id);
+        }
+        continue;
+      }
+
+      if (!seco) {
+        const { error } = await supabase
+          .from("clientes")
+          .update({ asaas_customer_id: asaasId, sincronizado_em: new Date().toISOString() })
+          .eq("id", alvo.id);
+        if (error) {
+          r.conflitos.push({
+            etapa: "clientes",
+            asaas_id: asaasId,
+            documento,
+            nome: alvo.nome,
+            motivo: error.message,
+          });
+          continue;
+        }
+      }
+      r.vinculados++;
+      continue;
+    }
+
+    if (!seco) {
+      const { error } = await supabase.from("clientes").insert(linha);
+      if (error) {
+        r.conflitos.push({
+          etapa: "clientes",
+          asaas_id: asaasId,
+          documento,
+          nome: String(linha.nome),
+          motivo: error.message,
+        });
+        continue;
+      }
+    }
+    r.criados++;
+  }
+
+  return r;
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  Resolução de vínculo — a mesma consulta que o webhook faz
+// ════════════════════════════════════════════════════════════════════
+
+async function idPorAsaas(
+  supabase: SupabaseClient,
+  tabela: string,
+  coluna: string,
+  valor: string | null
+): Promise<string | null> {
+  if (!valor) return null;
+  const { data } = await supabase.from(tabela).select("id").eq(coluna, valor).maybeSingle();
+  return (data as { id: string } | null)?.id ?? null;
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  2. Assinaturas
+// ════════════════════════════════════════════════════════════════════
+
+export async function backfillAssinaturas(
+  supabase: SupabaseClient,
+  opts: OpcoesBackfill = {}
+): Promise<ResultadoEtapa> {
+  const offset = opts.offset ?? 0;
+  const seco = opts.seco ?? false;
+  const r = vazio("assinaturas", offset, seco);
+
+  const pagina = await listarPagina<Record<string, unknown>>(
+    "/subscriptions",
+    offset,
+    opts.limite ?? 100
+  );
+  r.lidos = pagina.data.length;
+  r.tem_mais = pagina.hasMore;
+  r.proximo_offset = pagina.hasMore ? offset + pagina.data.length : null;
+
+  for (const bruto of pagina.data) {
+    const mapeada = linhaDaAssinatura(bruto);
+    if (!mapeada) {
+      r.ignorados++;
+      continue;
+    }
+    const { linha, vinculos, cicloDesconhecido } = mapeada;
+    const asaasId = linha.asaas_subscription_id as string;
+
+    if (cicloDesconhecido) {
+      // ⛔ Ciclo que não sabemos traduzir não vira `mensal` por conveniência:
+      // uma semestral rotulada de mensal multiplica o MRR por seis.
+      r.conflitos.push({
+        etapa: "assinaturas",
+        asaas_id: asaasId,
+        motivo: `ciclo "${cicloDesconhecido}" desconhecido — a assinatura entra sem ciclo, e o MRR não a conta até alguém classificar`,
+      });
+    }
+
+    const clienteId = await idPorAsaas(supabase, "clientes", "asaas_customer_id", vinculos.customer);
+    if (clienteId) linha.cliente_id = clienteId;
+
+    const existenteId = await idPorAsaas(supabase, "assinaturas", "asaas_subscription_id", asaasId);
+
+    if (!seco) {
+      const { error } = existenteId
+        ? await supabase.from("assinaturas").update(linha).eq("id", existenteId)
+        : await supabase.from("assinaturas").insert({
+            ...linha,
+            inicio: asaasParaDataLocal(bruto.dateCreated) ?? new Date().toISOString().slice(0, 10),
+          });
+      if (error) {
+        r.conflitos.push({ etapa: "assinaturas", asaas_id: asaasId, motivo: error.message });
+        continue;
+      }
+    }
+    if (existenteId) r.atualizados++;
+    else r.criados++;
+  }
+
+  return r;
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  3. Cobranças — a etapa grande, 180 linhas
+// ════════════════════════════════════════════════════════════════════
+
+export async function backfillCobrancas(
+  supabase: SupabaseClient,
+  opts: OpcoesBackfill = {}
+): Promise<ResultadoEtapa> {
+  const offset = opts.offset ?? 0;
+  const seco = opts.seco ?? false;
+  const r = vazio("cobrancas", offset, seco);
+
+  const pagina = await listarPagina<Record<string, unknown>>("/payments", offset, opts.limite ?? 50);
+  r.lidos = pagina.data.length;
+  r.tem_mais = pagina.hasMore;
+  r.proximo_offset = pagina.hasMore ? offset + pagina.data.length : null;
+
+  for (const bruto of pagina.data) {
+    const mapeada = linhaDaCobranca(bruto);
+    if (!mapeada) {
+      r.ignorados++;
+      continue;
+    }
+    const { linha, vinculos } = mapeada;
+    const asaasId = linha.asaas_payment_id as string;
+
+    const clienteId = await idPorAsaas(supabase, "clientes", "asaas_customer_id", vinculos.customer);
+    if (clienteId) linha.cliente_id = clienteId;
+
+    const assinaturaId = await idPorAsaas(
+      supabase,
+      "assinaturas",
+      "asaas_subscription_id",
+      vinculos.subscription
+    );
+    if (assinaturaId) linha.assinatura_id = assinaturaId;
+
+    const existenteId = await idPorAsaas(supabase, "contas_receber", "asaas_payment_id", asaasId);
+
+    if (!seco) {
+      const { error } = existenteId
+        ? // ⛔ Sem `valor_contratado`: quem já está aqui pode ter sido editado
+          // por um humano, e o gateway não tem autoridade sobre esse campo.
+          await supabase.from("contas_receber").update(linha).eq("id", existenteId)
+        : await supabase
+            .from("contas_receber")
+            .insert({ ...linha, valor_contratado: linha.valor_cobrado });
+      if (error) {
+        r.conflitos.push({ etapa: "cobrancas", asaas_id: asaasId, motivo: error.message });
+        continue;
+      }
+    }
+    if (existenteId) r.atualizados++;
+    else r.criados++;
+  }
+
+  return r;
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  4. Notas fiscais
+// ════════════════════════════════════════════════════════════════════
+
+export async function backfillNotas(
+  supabase: SupabaseClient,
+  opts: OpcoesBackfill = {}
+): Promise<ResultadoEtapa> {
+  const offset = opts.offset ?? 0;
+  const seco = opts.seco ?? false;
+  const r = vazio("notas", offset, seco);
+
+  const pagina = await listarPagina<Record<string, unknown>>("/invoices", offset, opts.limite ?? 50);
+  r.lidos = pagina.data.length;
+  r.tem_mais = pagina.hasMore;
+  r.proximo_offset = pagina.hasMore ? offset + pagina.data.length : null;
+
+  for (const bruto of pagina.data) {
+    const mapeada = linhaDaNota(bruto);
+    if (!mapeada) {
+      r.ignorados++;
+      continue;
+    }
+    const { linha, vinculos } = mapeada;
+    const asaasId = linha.asaas_invoice_id as string;
+
+    const clienteId = await idPorAsaas(supabase, "clientes", "asaas_customer_id", vinculos.customer);
+    if (clienteId) linha.cliente_id = clienteId;
+
+    const contaId = await idPorAsaas(
+      supabase,
+      "contas_receber",
+      "asaas_payment_id",
+      vinculos.payment
+    );
+    if (contaId) linha.conta_receber_id = contaId;
+
+    const existenteId = await idPorAsaas(supabase, "notas_fiscais", "asaas_invoice_id", asaasId);
+
+    if (!seco) {
+      const { error } = existenteId
+        ? await supabase.from("notas_fiscais").update(linha).eq("id", existenteId)
+        : await supabase.from("notas_fiscais").insert(linha);
+      if (error) {
+        r.conflitos.push({ etapa: "notas", asaas_id: asaasId, motivo: error.message });
+        continue;
+      }
+    }
+    if (existenteId) r.atualizados++;
+    else r.criados++;
+  }
+
+  return r;
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  5. Religar os órfãos
+// ════════════════════════════════════════════════════════════════════
+
+/**
+ * Liga ao cliente as linhas que chegaram antes dele.
+ *
+ * ⚖️ **Por que órfão existe, e por que isso é certo.** O webhook grava a
+ * cobrança mesmo quando o `customer` ainda não é conhecido aqui — porque a
+ * alternativa seria o gateway criar cliente sozinho, e o §1.1 proíbe isso: o
+ * Asaas *"não pode ser origem de cliente novo sem passar pela conciliação por
+ * documento"*. Perder a cobrança seria pior que guardá-la desvinculada.
+ *
+ * Esta função é o segundo tempo dessa decisão: assim que o cliente existe —
+ * pela conciliação, pelo CRM ou pela tela — as linhas que o esperavam
+ * encontram o dono. Sem ela, "guardar desvinculada" viraria "guardar para
+ * sempre desvinculada", que é o cemitério silencioso que o §2.3 descreve.
+ */
+export async function religarOrfaos(
+  supabase: SupabaseClient,
+  seco = false
+): Promise<{ etapa: Etapa; contas: number; assinaturas: number; notas: number; seco: boolean }> {
+  const r = { etapa: "religar" as Etapa, contas: 0, assinaturas: 0, notas: 0, seco };
+
+  const { data: clientes } = await supabase
+    .from("clientes")
+    .select("id, asaas_customer_id")
+    .not("asaas_customer_id", "is", null);
+
+  const tabelas = [
+    ["contas_receber", "contas"],
+    ["assinaturas", "assinaturas"],
+    ["notas_fiscais", "notas"],
+  ] as const;
+
+  for (const c of (clientes ?? []) as Array<{ id: string; asaas_customer_id: string }>) {
+    for (const [tabela, campo] of tabelas) {
+      // `asaas_customer_id` viaja na própria linha desde a migração de
+      // 28/08/2026 — é o que torna isto um `where`, e não uma varredura de
+      // JSON que funcionaria só em `notas_fiscais` (a única com `payload`) e
+      // falharia calada nas outras duas.
+      const { data: orfas } = await supabase
+        .from(tabela)
+        .select("id")
+        .is("cliente_id", null)
+        .eq("asaas_customer_id", c.asaas_customer_id);
+
+      const ids = ((orfas ?? []) as Array<{ id: string }>).map((o) => o.id);
+      if (ids.length === 0) continue;
+
+      if (!seco) {
+        await supabase.from(tabela).update({ cliente_id: c.id }).in("id", ids);
+      }
+      r[campo] += ids.length;
+    }
+  }
+
+  return r;
+}

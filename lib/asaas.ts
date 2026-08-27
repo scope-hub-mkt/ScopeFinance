@@ -54,6 +54,37 @@ async function asaasRequest<T = unknown>(
   return data as T;
 }
 
+// ─── Listagem paginada ──────────────────────────────────────────────
+
+export interface PaginaAsaas<T> {
+  data: T[];
+  hasMore: boolean;
+  totalCount: number;
+  offset: number;
+}
+
+/**
+ * Uma página de qualquer coleção do Asaas (`/customers`, `/payments`, …).
+ *
+ * ⚖️ Existe para o backfill do §4 do plano: o webhook só traz o que acontece
+ * **de agora em diante**, e a conta tem 180 cobranças e 51 notas anteriores a
+ * ele. Sem esta leitura, faturamento, MRR e inadimplência continuariam sem
+ * relação com o dinheiro que de fato passou pelo gateway.
+ *
+ * Página por página, e não tudo de uma vez, porque o consumidor roda em
+ * serverless: uma função que tenta 180 itens com ida e volta ao banco em cada
+ * um esbarra no teto de duração e morre no meio — deixando metade importada,
+ * que é o pior estado possível.
+ */
+export function listarPagina<T = Record<string, unknown>>(
+  colecao: string,
+  offset = 0,
+  limit = 100
+): Promise<PaginaAsaas<T>> {
+  const sep = colecao.includes("?") ? "&" : "?";
+  return asaasRequest<PaginaAsaas<T>>(`${colecao}${sep}limit=${limit}&offset=${offset}`);
+}
+
 // ─── Customers ──────────────────────────────────────────────────────
 export interface AsaasCustomer {
   id: string;

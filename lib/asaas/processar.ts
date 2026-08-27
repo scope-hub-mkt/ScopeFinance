@@ -1,7 +1,22 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { definicaoDoEvento } from "./eventos";
-import { asaasParaDataLocal, deducaoDoGateway, dinheiro, type EnvelopeAsaas } from "./webhook";
+import { asaasParaDataLocal, type EnvelopeAsaas } from "./webhook";
+import {
+  linhaDaAssinatura,
+  linhaDaCobranca,
+  linhaDaNota,
+} from "./mapear";
+
+// Reexportados porque a suíte e o backfill os leem daqui desde a primeira
+// versão. O lugar onde eles MORAM é `mapear.ts` — puro, e único.
+export {
+  cicloDoAsaas,
+  foiRecebido,
+  statusDaAssinatura,
+  statusDaCobranca,
+  tipoDaVenda,
+} from "./mapear";
 
 /**
  * O que cada evento P0 do Asaas escreve no ScopeFinance.
@@ -187,287 +202,116 @@ async function resolverAssinatura(
 }
 
 // ════════════════════════════════════════════════════════════════════
-//  Cobranças — `PAYMENT_*`
+//  Cobranças, assinaturas e notas — `PAYMENT_*`, `SUBSCRIPTION_*`, `INVOICE_*`
 // ════════════════════════════════════════════════════════════════════
-
-/**
- * O status do Asaas traduzido para o vocabulário de `contas_receber`.
- *
- * ⚖️ **Por que traduzir em vez de gravar o do Asaas na coluna `status`.** Essa
- * coluna é lida por `lib/integracao/contrato.ts`, que calcula faturamento,
- * recebido e inadimplência com ela — e a Dashboard exibe esses números sem
- * recalcular (`RN-01`). Um valor novo ali muda silenciosamente três
- * indicadores. O status fino do Asaas é preservado em `asaas_status`, que
- * ninguém soma.
- *
- * ⚠️ `REFUNDED` vira `Cancelado`, não um status novo: o cálculo de
- * inadimplência exclui `Pago` e `Cancelado`. Um estorno com vencimento
- * passado, sob qualquer outro rótulo, entraria no vermelho do painel como se
- * fosse dívida do cliente — e não é: o dinheiro voltou.
- */
-export function statusDaCobranca(evento: string, statusAsaas: unknown): string | null {
-  const s = typeof statusAsaas === "string" ? statusAsaas : "";
-
-  switch (evento) {
-    case "PAYMENT_RECEIVED":
-      return "Pago";
-    case "PAYMENT_OVERDUE":
-      return "Vencido";
-    case "PAYMENT_DELETED":
-    case "PAYMENT_REFUNDED":
-      return "Cancelado";
-    case "PAYMENT_RESTORED":
-    case "PAYMENT_RECEIVED_IN_CASH_UNDONE":
-      return "Pendente";
-    // `CONFIRMED` é dinheiro prometido, não recebido — "Ainda NÃO é saldo
-    // disponível", nas palavras do próprio catálogo. Contá-lo como Pago
-    // anteciparia comissão sobre dinheiro que não entrou (`RN-06`).
-    case "PAYMENT_CONFIRMED":
-      return "Pendente";
-    case "PAYMENT_PARTIALLY_REFUNDED":
-    case "PAYMENT_ANTICIPATED":
-      // Não mexem no estado da conta, só no valor/na data de crédito.
-      return null;
-    default:
-      // `PAYMENT_CREATED` e `PAYMENT_UPDATED` carregam o status atual.
-      if (s === "RECEIVED" || s === "RECEIVED_IN_CASH") return "Pago";
-      if (s === "OVERDUE") return "Vencido";
-      if (s === "REFUNDED" || s === "DELETED") return "Cancelado";
-      return "Pendente";
-  }
-}
-
-/** Recebido de fato — inclui a baixa em dinheiro fora do gateway. */
-function foiRecebido(evento: string, statusAsaas: unknown): boolean {
-  if (evento === "PAYMENT_RECEIVED") return true;
-  return statusAsaas === "RECEIVED" || statusAsaas === "RECEIVED_IN_CASH";
-}
+//
+// ⚖️ Estes três handlers fazem **só o que exige banco**: resolver vínculo,
+// decidir entre inserir e atualizar, e gravar. A tradução do objeto do Asaas
+// para a linha mora em `mapear.ts`, e é a MESMA que o backfill usa. Duas
+// traduções do mesmo dado divergiriam no primeiro campo que alguém corrigisse
+// num lado só — e a divergência apareceria meses depois, num relatório em que
+// a cobrança importada e a recebida ao vivo não batem.
 
 async function aplicarCobranca(
   supabase: SupabaseClient,
   env: EnvelopeAsaas
 ): Promise<Desfecho> {
-  const o = env.objeto as Record<string, unknown>;
-  const asaasId = typeof o.id === "string" ? o.id : null;
-  if (!asaasId) return { estado: "failed", motivo: "cobrança sem id" };
+  const mapeada = linhaDaCobranca(env.objeto as Record<string, unknown>, env.event);
+  if (!mapeada) return { estado: "failed", motivo: "cobrança sem id" };
 
-  const recebido = foiRecebido(env.event, o.status);
-  const vencimento = asaasParaDataLocal(o.dueDate);
-  const pagoEm = recebido
-    ? asaasParaDataLocal(o.paymentDate ?? o.clientPaymentDate ?? o.confirmedDate)
-    : null;
+  const { linha, vinculos } = mapeada;
 
-  // ⚠️ A competência é o mês do VENCIMENTO, não o de hoje. É o que faz a
-  // cobrança de janeiro paga em março contar em janeiro no faturamento.
-  const competencia = vencimento ? `${vencimento.slice(0, 7)}-01` : null;
+  const clienteId = await resolverCliente(supabase, vinculos.customer);
+  if (clienteId) linha.cliente_id = clienteId;
 
-  const espelho: Record<string, unknown> = {
-    asaas_payment_id: asaasId,
-    descricao:
-      (typeof o.description === "string" && o.description.trim()) || `Cobrança Asaas ${asaasId}`,
-    valor: dinheiro(o.value),
-    // ⛔ Espelho do gateway — nunca editável pela tela (§4.7).
-    valor_cobrado: dinheiro(o.value),
-    valor_liquido: dinheiro(o.netValue),
-    asaas_status: typeof o.status === "string" ? o.status : null,
-    vencimento,
-    competencia,
-    forma_pagamento: typeof o.billingType === "string" ? o.billingType : null,
-  };
-
-  const novoStatus = statusDaCobranca(env.event, o.status);
-  if (novoStatus) espelho.status = novoStatus;
-
-  if (recebido) {
-    espelho.pago_em = pagoEm;
-    espelho.valor_pago = dinheiro(o.value);
-    // 📐 `RN-04` da Dashboard calcula a comissão sobre `valor_pago − deducoes`.
-    // Gravando a taxa do gateway aqui, a base de comissão passa a ser
-    // exatamente o `netValue` — o que o §4.10 manda — sem uma linha sequer
-    // mudar do lado de lá.
-    espelho.deducoes = deducaoDoGateway(o.value, o.netValue) ?? "0.00";
-  } else if (env.event === "PAYMENT_RECEIVED_IN_CASH_UNDONE") {
-    // Desfazer a baixa é apagar os três fatos que ela criou, não só o status.
-    espelho.pago_em = null;
-    espelho.valor_pago = null;
-    espelho.deducoes = "0.00";
-  }
-
-  const clienteId = await resolverCliente(supabase, o.customer);
-  if (clienteId) espelho.cliente_id = clienteId;
-
-  const assinaturaId = await resolverAssinatura(supabase, o.subscription);
-  if (assinaturaId) espelho.assinatura_id = assinaturaId;
+  const assinaturaId = await resolverAssinatura(supabase, vinculos.subscription);
+  if (assinaturaId) linha.assinatura_id = assinaturaId;
 
   const { data: existente } = await supabase
     .from("contas_receber")
-    .select("id, valor_contratado")
-    .eq("asaas_payment_id", asaasId)
+    .select("id")
+    .eq("asaas_payment_id", linha.asaas_payment_id as string)
     .maybeSingle();
 
   if (existente) {
-    // ⛔ `valor_contratado` NÃO entra no update. Ele é o que foi combinado com
-    // o cliente, dono é o ScopeFinance, e `RN-03` diz que é editável aqui.
-    // Sobrescrevê-lo com o valor do Asaas é exatamente o conflito que o §4.7
-    // resolve separando os dois fatos — e apagaria a edição de um humano.
+    // ⛔ `valor_contratado` NÃO entra no update — `mapear.ts` nem o produz.
+    // Ele é o que foi combinado com o cliente, e `RN-03` diz que é editável
+    // aqui. Sobrescrevê-lo com o valor do gateway apagaria a edição de um
+    // humano, que é o conflito que o §4.7 resolve separando os dois fatos.
     const { error } = await supabase
       .from("contas_receber")
-      .update(espelho)
+      .update(linha)
       .eq("id", (existente as { id: string }).id);
     if (error) return { estado: "failed", motivo: error.message };
-    return {
-      estado: "done",
-      detalhe: clienteId ? undefined : "cobrança sem cliente vinculado — customer desconhecido aqui",
-    };
+  } else {
+    // Na criação o contratado nasce igual ao cobrado: ainda não houve edição
+    // humana para preservar.
+    const { error } = await supabase
+      .from("contas_receber")
+      .insert({ ...linha, valor_contratado: linha.valor_cobrado });
+    if (error) return { estado: "failed", motivo: error.message };
   }
-
-  // Na criação, o contratado nasce igual ao cobrado: ainda não houve edição
-  // humana para preservar.
-  const { error } = await supabase
-    .from("contas_receber")
-    .insert({ ...espelho, valor_contratado: dinheiro(o.value) });
-  if (error) return { estado: "failed", motivo: error.message };
 
   return {
     estado: "done",
-    detalhe: clienteId ? undefined : "cobrança criada sem cliente — customer desconhecido aqui",
+    detalhe: clienteId ? undefined : "cobrança sem cliente vinculado — customer desconhecido aqui",
   };
-}
-
-// ════════════════════════════════════════════════════════════════════
-//  Assinaturas — `SUBSCRIPTION_*`
-// ════════════════════════════════════════════════════════════════════
-
-/**
- * O ciclo do Asaas no vocabulário de `assinaturas.ciclo`.
- *
- * ⛔ Devolve `null` para ciclo desconhecido em vez de cair em `'mensal'`.
- * Um ciclo semestral rotulado de mensal multiplica o MRR por seis — e o
- * número sai errado **parecendo certo**, que é a falha que o §4.10 descreve.
- */
-export function cicloDoAsaas(cycle: unknown): string | null {
-  switch (cycle) {
-    case "WEEKLY":
-      return "semanal";
-    case "BIWEEKLY":
-      return "quinzenal";
-    case "MONTHLY":
-      return "mensal";
-    case "BIMONTHLY":
-      return "bimestral";
-    case "QUARTERLY":
-      return "trimestral";
-    case "SEMIANNUALLY":
-      return "semestral";
-    case "YEARLY":
-      return "anual";
-    default:
-      return null;
-  }
-}
-
-/** `Ativa | Suspensa | Cancelada` — o vocabulário que o MRR já lê. */
-export function statusDaAssinatura(evento: string, statusAsaas: unknown): string {
-  if (evento === "SUBSCRIPTION_INACTIVATED" || evento === "SUBSCRIPTION_DELETED") {
-    return "Cancelada";
-  }
-  if (statusAsaas === "INACTIVE") return "Cancelada";
-  if (statusAsaas === "EXPIRED") return "Cancelada";
-  return "Ativa";
 }
 
 async function aplicarAssinatura(
   supabase: SupabaseClient,
   env: EnvelopeAsaas
 ): Promise<Desfecho> {
-  const o = env.objeto as Record<string, unknown>;
-  const asaasId = typeof o.id === "string" ? o.id : null;
-  if (!asaasId) return { estado: "failed", motivo: "assinatura sem id" };
+  const mapeada = linhaDaAssinatura(env.objeto as Record<string, unknown>, env.event);
+  if (!mapeada) return { estado: "failed", motivo: "assinatura sem id" };
 
-  const ciclo = cicloDoAsaas(o.cycle);
-  const linha: Record<string, unknown> = {
-    asaas_subscription_id: asaasId,
-    direcao: "receber",
-    descricao:
-      (typeof o.description === "string" && o.description.trim()) || `Assinatura Asaas ${asaasId}`,
-    valor: dinheiro(o.value),
-    status: statusDaAssinatura(env.event, o.status),
-    proximo_venc: asaasParaDataLocal(o.nextDueDate),
-  };
-  if (ciclo) linha.ciclo = ciclo;
+  const { linha, vinculos, cicloDesconhecido } = mapeada;
 
-  const clienteId = await resolverCliente(supabase, o.customer);
+  const clienteId = await resolverCliente(supabase, vinculos.customer);
   if (clienteId) linha.cliente_id = clienteId;
 
   const { data: existente } = await supabase
     .from("assinaturas")
     .select("id")
-    .eq("asaas_subscription_id", asaasId)
+    .eq("asaas_subscription_id", linha.asaas_subscription_id as string)
     .maybeSingle();
 
-  if (existente) {
-    const { error } = await supabase
-      .from("assinaturas")
-      .update(linha)
-      .eq("id", (existente as { id: string }).id);
-    if (error) return { estado: "failed", motivo: error.message };
-  } else {
-    const { error } = await supabase
-      .from("assinaturas")
-      .insert({ ...linha, inicio: asaasParaDataLocal(o.dateCreated) ?? new Date().toISOString().slice(0, 10) });
-    if (error) return { estado: "failed", motivo: error.message };
-  }
+  const { error } = existente
+    ? await supabase.from("assinaturas").update(linha).eq("id", (existente as { id: string }).id)
+    : await supabase.from("assinaturas").insert({
+        ...linha,
+        inicio:
+          asaasParaDataLocal((env.objeto as Record<string, unknown>).dateCreated) ??
+          new Date().toISOString().slice(0, 10),
+      });
+
+  if (error) return { estado: "failed", motivo: error.message };
 
   const avisos: string[] = [];
-  if (!ciclo) avisos.push(`ciclo "${String(o.cycle)}" desconhecido — não gravado, MRR não usa palpite`);
+  if (cicloDesconhecido) {
+    avisos.push(`ciclo "${cicloDesconhecido}" desconhecido — não gravado, o MRR não usa palpite`);
+  }
   if (!clienteId) avisos.push("customer desconhecido aqui — assinatura sem cliente vinculado");
   return { estado: "done", detalhe: avisos.length ? avisos.join(" · ") : undefined };
 }
-
-// ════════════════════════════════════════════════════════════════════
-//  Notas fiscais — `INVOICE_*`
-// ════════════════════════════════════════════════════════════════════
 
 async function aplicarNotaFiscal(
   supabase: SupabaseClient,
   env: EnvelopeAsaas
 ): Promise<Desfecho> {
-  const o = env.objeto as Record<string, unknown>;
-  const asaasId = typeof o.id === "string" ? o.id : null;
-  if (!asaasId) return { estado: "failed", motivo: "nota sem id" };
+  const mapeada = linhaDaNota(env.objeto as Record<string, unknown>, env.event);
+  if (!mapeada) return { estado: "failed", motivo: "nota sem id" };
 
-  const status =
-    env.event === "INVOICE_AUTHORIZED"
-      ? "Emitida"
-      : env.event === "INVOICE_CANCELED"
-        ? "Cancelada"
-        : env.event === "INVOICE_ERROR"
-          ? "Erro"
-          : "Pendente";
+  const { linha, vinculos } = mapeada;
 
-  const linha: Record<string, unknown> = {
-    asaas_invoice_id: asaasId,
-    descricao_servico: typeof o.serviceDescription === "string" ? o.serviceDescription : null,
-    valor: dinheiro(o.value),
-    status,
-    numero: typeof o.number === "string" ? o.number : null,
-    data_emissao: asaasParaDataLocal(o.effectiveDate ?? o.dateCreated),
-    pdf_url: typeof o.pdfUrl === "string" ? o.pdfUrl : null,
-    xml_url: typeof o.xmlUrl === "string" ? o.xmlUrl : null,
-    // O objeto inteiro fica na nota também: quando o fiscal perguntar por que
-    // uma nota saiu como saiu, a resposta é este campo, não uma reconstituição.
-    payload: o,
-    erro: env.event === "INVOICE_ERROR" ? JSON.stringify(o.errors ?? o.status ?? "erro") : null,
-  };
-
-  const clienteId = await resolverCliente(supabase, o.customer);
+  const clienteId = await resolverCliente(supabase, vinculos.customer);
   if (clienteId) linha.cliente_id = clienteId;
 
-  if (typeof o.payment === "string") {
+  if (vinculos.payment) {
     const { data: conta } = await supabase
       .from("contas_receber")
       .select("id")
-      .eq("asaas_payment_id", o.payment)
+      .eq("asaas_payment_id", vinculos.payment)
       .maybeSingle();
     if (conta) linha.conta_receber_id = (conta as { id: string }).id;
   }
@@ -475,7 +319,7 @@ async function aplicarNotaFiscal(
   const { data: existente } = await supabase
     .from("notas_fiscais")
     .select("id")
-    .eq("asaas_invoice_id", asaasId)
+    .eq("asaas_invoice_id", linha.asaas_invoice_id as string)
     .maybeSingle();
 
   const { error } = existente
@@ -494,29 +338,22 @@ async function aplicarNotaFiscal(
  * `CHECKOUT_PAID` é conversão de link de pagamento.
  *
  * ⚖️ Ele **não** cria cobrança aqui: o Asaas emite `PAYMENT_CREATED` /
- * `PAYMENT_RECEIVED` para a cobrança que o checkout gerou, e é esse evento
- * que carrega o `payment` com valor, vencimento e líquido. Criar a conta
- * pelos dois caminhos produziria duas linhas para o mesmo dinheiro.
+ * `PAYMENT_RECEIVED` para a cobrança que o checkout gerou, e é esse evento que
+ * carrega o `payment` com valor, vencimento e líquido. Criar a conta pelos
+ * dois caminhos produziria duas linhas para o mesmo dinheiro.
  *
- * O que se faz aqui é o que só este evento sabe: registrar que o link
- * converteu. O restante chega pelo caminho de cobrança.
+ * O que este evento sabe e nenhum outro sabe — que o link converteu — já está
+ * guardado no payload cru da caixa de entrada.
  */
-async function aplicarCheckout(
-  supabase: SupabaseClient,
-  env: EnvelopeAsaas
-): Promise<Desfecho> {
+async function aplicarCheckout(_supabase: SupabaseClient, env: EnvelopeAsaas): Promise<Desfecho> {
   const o = env.objeto as Record<string, unknown>;
-  const asaasId = typeof o.id === "string" ? o.id : null;
-  if (!asaasId) return { estado: "failed", motivo: "checkout sem id" };
-
-  // O evento fica guardado com o payload cru na caixa de entrada — que é o
-  // registro da conversão. Nada mais a escrever sem duplicar a cobrança.
-  void supabase;
+  if (typeof o.id !== "string" || !o.id) return { estado: "failed", motivo: "checkout sem id" };
   return {
     estado: "done",
     detalhe: "conversão registrada; a cobrança chega pelos eventos PAYMENT_*",
   };
 }
+
 
 // ════════════════════════════════════════════════════════════════════
 //  A rede de segurança do §4.5 e o alerta do §4.9
