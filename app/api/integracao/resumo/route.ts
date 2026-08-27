@@ -23,7 +23,27 @@ export const GET = rotaIntegracao(async () => {
       .select("id, cliente_id, contrato_id, valor, valor_pago, deducoes, vencimento, status, pago_em")
       .limit(10000),
     supabase.from("assinaturas").select("valor, ciclo, status").limit(2000),
-    supabase.from("clientes").select("id", { count: "exact", head: true }).eq("status", "Ativo"),
+    // ⛔ **Cliente provisório NÃO entra em número financeiro** — §2.3, item 3
+    // da lista do que o estado proíbe: nada de faturamento, MRR, inadimplência
+    // **nem clientes ativos**.
+    //
+    // ⚠️ **Isto foi medido errando, em 28/08/2026.** O vigia do CRM criou os
+    // dois primeiros clientes provisórios e `clientes_ativos` saltou de 21 para
+    // 23 — porque `clientes.status` nasce `'Ativo'` por default do schema, e a
+    // contagem olhava só para ele. Nenhum erro foi levantado: o painel da
+    // Dashboard passou a exibir dois clientes a mais, com cara de certo.
+    //
+    // ⚖️ A trava fica **aqui, na contagem**, e não em quem cria: assim ela
+    // vale para QUALQUER caminho que produza um cadastro incompleto — o CRM, o
+    // backfill do gateway, a tela — em vez de depender de cada um lembrar.
+    // `status` e `status_cadastro` são eixos diferentes: o primeiro diz se o
+    // cliente está em operação, o segundo diz se a identidade dele está
+    // conferida. Só quem passa nos dois conta.
+    supabase
+      .from("clientes")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "Ativo")
+      .eq("status_cadastro", "efetivo"),
   ]);
 
   const erro = receber.error ?? assinaturas.error ?? ativos.error;

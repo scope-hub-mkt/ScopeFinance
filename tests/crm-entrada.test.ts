@@ -320,3 +320,64 @@ describe("clienteDoCrm — a tradução", () => {
     expect(clienteDoCrm(sem.payload).status_cadastro).toBe("provisorio");
   });
 });
+
+// ════════════════════════════════════════════════════════════════════
+describe("§2.3 — o que 'provisório' PROÍBE, e por que isso não é rótulo", () => {
+  /**
+   * ⚠️ **Este bloco nasceu de um defeito medido em produção, em 28/08/2026.**
+   * O vigia criou os dois primeiros clientes provisórios e `clientes_ativos`
+   * saltou de 21 para 23 — porque `clientes.status` nasce `'Ativo'` por
+   * default do schema, e a contagem do resumo olhava só para ele. Nenhum erro
+   * foi levantado: o painel passou a exibir dois clientes a mais, com cara de
+   * certo.
+   *
+   * ⚖️ A lição está no §2.3: sem a lista do que o estado proíbe, "provisório"
+   * é um rótulo bonito que não protege de nada.
+   */
+  it("cliente provisório é criado com identidade INCOMPLETA e fica marcado", async () => {
+    banco();
+    const p = payload({ documento: null, empresa: {} });
+    if (!p.ok) throw new Error("payload");
+    await aplicarEventoCrm(fakeAtual() as never, p.payload, {});
+
+    const c = fakeAtual().tabela("clientes")[0];
+    expect(c.status_cadastro).toBe("provisorio");
+    expect(c.cnpj).toBeUndefined();
+    expect(c.cpf).toBeUndefined();
+  });
+
+  it("a fila devolve provisórios e conflitos, e ordena pelo mais antigo", async () => {
+    const velho = new Date(Date.now() - 5 * 86_400_000).toISOString();
+    banco([
+      cliente({ id: "a", nome: "Antigo", status_cadastro: "provisorio", created_at: velho }),
+      cliente({
+        id: "b",
+        nome: "Recente",
+        documento_principal: "99999999000199",
+        status_cadastro: "em_conflito",
+      }),
+      cliente({ id: "c", nome: "Normal", documento_principal: "88888888000188" }),
+    ]);
+
+    const fila = await clientesEmRevisao(fakeAtual() as never);
+    expect(fila.map((f) => f.nome)).toEqual(["Antigo", "Recente"]);
+    // ⛔ Quem já tem identidade conferida não aparece na fila.
+    expect(fila.some((f) => f.nome === "Normal")).toBe(false);
+    // Dias esperando é o que transforma a lista em urgência visível.
+    expect(fila[0].dias_esperando).toBe(5);
+  });
+
+  it("filtra por estado quando pedido", async () => {
+    banco([
+      cliente({ id: "a", nome: "Prov", status_cadastro: "provisorio" }),
+      cliente({
+        id: "b",
+        nome: "Confl",
+        documento_principal: "99999999000199",
+        status_cadastro: "em_conflito",
+      }),
+    ]);
+    expect((await clientesEmRevisao(fakeAtual() as never, "provisorio")).map((f) => f.nome)).toEqual(["Prov"]);
+    expect((await clientesEmRevisao(fakeAtual() as never, "em_conflito")).map((f) => f.nome)).toEqual(["Confl"]);
+  });
+});
