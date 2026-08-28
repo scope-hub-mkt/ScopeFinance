@@ -49,20 +49,30 @@ if (SECO) {
 // A conexão direta saiu do ar em projetos novos (só IPv6) e o pooler é o
 // caminho que funciona nos dois casos. Tenta na ordem, e diz qual pegou —
 // "não conectou" sem dizer onde tentou é diagnóstico pela metade.
+//
+// ⚠️ **A lista tinha só `aws-0-*`, e isso custou uma investigação inteira em
+// 28/08/2026.** Medido: `db.teewposuwjvoxfgmispn.supabase.co` resolve **só em
+// IPv6**, e numa rede sem rota IPv6 a tentativa direta ora dava `ETIMEDOUT`,
+// ora `password authentication failed` — o segundo é o pior, porque **acusa a
+// senha** e manda a pessoa trocar de novo a credencial que estava certa. Os
+// hosts `aws-0-*` desta lista **não resolvem** para este projeto; o dele é
+// `aws-1-us-east-1`.
+//
+// ⛔ Por isso `aws-1-*` entra e a ordem muda: **pooler primeiro, direta por
+// último**. O pooler resolve em IPv4 e funciona nas duas famílias de rede; a
+// direta só serve onde há IPv6, e tentá-la antes transforma um problema de
+// rota num diagnóstico de credencial.
+const REGIOES = ["us-east-1", "sa-east-1", "us-east-2"];
 const CANDIDATOS = [
-  { host: `db.${REF}.supabase.co`, port: 5432, user: "postgres", rotulo: "direta" },
-  {
-    host: "aws-0-sa-east-1.pooler.supabase.com",
-    port: 5432,
-    user: `postgres.${REF}`,
-    rotulo: "pooler sa-east-1 (sessão)",
-  },
-  {
-    host: "aws-0-us-east-1.pooler.supabase.com",
-    port: 5432,
-    user: `postgres.${REF}`,
-    rotulo: "pooler us-east-1 (sessão)",
-  },
+  ...REGIOES.flatMap((r) =>
+    ["aws-1", "aws-0"].map((p) => ({
+      host: `${p}-${r}.pooler.supabase.com`,
+      port: 5432,
+      user: `postgres.${REF}`,
+      rotulo: `pooler ${p}-${r} (sessão)`,
+    }))
+  ),
+  { host: `db.${REF}.supabase.co`, port: 5432, user: "postgres", rotulo: "direta (só IPv6)" },
 ];
 
 let cliente = null;
