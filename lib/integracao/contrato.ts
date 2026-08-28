@@ -367,3 +367,149 @@ export function interpretarEvento(env: Envelope): ResultadoEvento {
     },
   };
 }
+
+// ═══════════════════════════════════════════════════════════════════
+//  Serviços contratados — a terceira perna da ponte
+// ═══════════════════════════════════════════════════════════════════
+//
+// ⚖️ **Por que este bloco precisou existir, medido em 28/08/2026.** A ponte
+// com a Dashboard tinha duas pernas construídas e uma faltando:
+//
+//   1. cliente   → Dashboard   (`/clientes` + `importar-clientes-finance`)  ✅
+//   2. catálogo  → ScopeFinance (`cron/servicos-espelho` → `servicos_espelho`) ✅
+//   3. **quem contratou o quê** → **não existia em nenhum sentido**          ⛔
+//
+// O sintoma foi a tela `Serviços` da Dashboard: 36 clientes importados, 5
+// serviços no catálogo e o tile "Serviços mais contratados" afirmando **zero**
+// em todas as linhas. O tile estava certo — `cliente_servicos` tinha 0 linhas,
+// porque o compromisso comercial mora aqui, em `contratos` e `assinaturas`, e
+// nada o atravessava.
+//
+// ⛔ **`/vendas` não resolvia isto e não deveria.** Lá a linha é a *parcela*
+// ("Parcela 10 de 10."), e o nome do serviço não sobrevive à cobrança. O que a
+// Dashboard precisa é do **compromisso**, não do lançamento dele.
+
+/** Um compromisso de receita ativo — contrato ou assinatura, achatados. */
+export interface ServicoContratadoContrato {
+  /** Id da linha de origem. É a chave de idempotência do outro lado. */
+  referencia: string;
+  origem: "contrato" | "assinatura";
+  cliente_id: string;
+  /**
+   * O texto que descreve o serviço — **livre, e é esse o ponto**. Nem
+   * `contratos.servico` nem `assinaturas.descricao` têm `servico_id`: o
+   * vínculo com o catálogo é decisão da Dashboard, que é a dona dele.
+   */
+  rotulo: string;
+  plano: string | null;
+  valor: number | null;
+  /** `Mensal`, `mensal`, `Único`, `anual`… como o cadastro deste lado grava. */
+  recorrencia: string | null;
+  inicio: string | null;
+  fim: string | null;
+  /** `Ativo`/`Ativa`/`Encerrado`/`Cancelada` — o rótulo cru deste lado. */
+  status: string;
+  /** O mesmo status, já reduzido ao que a Dashboard decide com ele. */
+  ativo: boolean;
+  fonte: string;
+}
+
+export interface LinhaContrato {
+  id: string;
+  cliente_id: string | null;
+  servico: string | null;
+  valor: number | string | null;
+  freq: string | null;
+  categoria: string | null;
+  inicio: string | null;
+  fim: string | null;
+  status: string | null;
+}
+
+export interface LinhaAssinaturaContratada {
+  id: string;
+  direcao: string | null;
+  cliente_id: string | null;
+  descricao: string | null;
+  plano: string | null;
+  valor: number | string | null;
+  ciclo: string | null;
+  inicio: string | null;
+  fim: string | null;
+  status: string | null;
+}
+
+/**
+ * Status que contam como compromisso vivo.
+ *
+ * ⚠️ `Pausado` fica **fora**: o cliente não está pagando, e listá-lo como
+ * ativo faria a Dashboard recomendar upsell sobre uma relação suspensa. Ele
+ * atravessa a ponte com `ativo: false`, que é diferente de não atravessar —
+ * quem quiser mostrar "pausados" tem o dado.
+ */
+const VIVOS = new Set(["ativo", "ativa"]);
+
+const vivo = (status: string | null | undefined): boolean =>
+  VIVOS.has(String(status ?? "").trim().toLowerCase());
+
+/**
+ * Contratos + assinaturas a receber, no formato que a Dashboard consome.
+ *
+ * ⛔ **Assinatura `direcao = 'pagar'` é excluída aqui, não lá.** Ela é a Scope
+ * assinando ferramenta de terceiro — custo, não cliente. Deixá-la passar
+ * criaria "cliente contratou o Figma" no cadastro comercial da Dashboard.
+ *
+ * ⛔ **Linha sem `cliente_id` é descartada.** Sem cliente não há o que vincular,
+ * e inventar um destino é pior que omitir a linha.
+ */
+export function servicosContratadosParaContrato(
+  contratos: LinhaContrato[],
+  assinaturas: LinhaAssinaturaContratada[]
+): ServicoContratadoContrato[] {
+  const saida: ServicoContratadoContrato[] = [];
+
+  for (const c of contratos) {
+    if (!c.cliente_id) continue;
+    const rotulo = String(c.servico ?? "").trim();
+    if (!rotulo) continue;
+    saida.push({
+      referencia: c.id,
+      origem: "contrato",
+      cliente_id: c.cliente_id,
+      rotulo,
+      // `categoria` entra como plano porque é o que mais se aproxima: é a
+      // qualificação do contrato, não um segundo serviço.
+      plano: c.categoria ? String(c.categoria) : null,
+      valor: c.valor === null || c.valor === undefined ? null : reais(cents(c.valor)),
+      recorrencia: c.freq ?? null,
+      inicio: c.inicio ?? null,
+      fim: c.fim ?? null,
+      status: String(c.status ?? ""),
+      ativo: vivo(c.status),
+      fonte: FONTE,
+    });
+  }
+
+  for (const a of assinaturas) {
+    if (String(a.direcao ?? "receber").trim().toLowerCase() !== "receber") continue;
+    if (!a.cliente_id) continue;
+    const rotulo = String(a.descricao ?? a.plano ?? "").trim();
+    if (!rotulo) continue;
+    saida.push({
+      referencia: a.id,
+      origem: "assinatura",
+      cliente_id: a.cliente_id,
+      rotulo,
+      plano: a.plano ? String(a.plano) : null,
+      valor: a.valor === null || a.valor === undefined ? null : reais(cents(a.valor)),
+      recorrencia: a.ciclo ?? null,
+      inicio: a.inicio ?? null,
+      fim: a.fim ?? null,
+      status: String(a.status ?? ""),
+      ativo: vivo(a.status),
+      fonte: FONTE,
+    });
+  }
+
+  return saida;
+}

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   baseLiquida,
+  servicosContratadosParaContrato,
+  type LinhaAssinaturaContratada,
+  type LinhaContrato,
   calcularMrr,
   calcularResumo,
   calcularSerie,
@@ -342,5 +345,99 @@ describe("interpretarEvento — os DOIS formatos de cliente.criado da Dashboard"
     // insert dá Ativo. Mandar `null` explodiria a constraint.
     const r = interpretarEvento(env("cliente.criado", { cliente_id: "c1", nome: "Acme" }));
     if (r.acao === "criar") expect(Object.keys(r.cliente)).not.toContain("status");
+  });
+});
+
+describe("servicosContratadosParaContrato — a perna que faltava na ponte", () => {
+  const contrato = (over: Partial<LinhaContrato> = {}): LinhaContrato => ({
+    id: "c1",
+    cliente_id: "cli-1",
+    servico: "WebDesign - Manutenção Recorrente",
+    valor: 850,
+    freq: "Mensal",
+    categoria: "WebDesign",
+    inicio: "2026-01-01",
+    fim: null,
+    status: "Ativo",
+    ...over,
+  });
+
+  const assinatura = (
+    over: Partial<LinhaAssinaturaContratada> = {}
+  ): LinhaAssinaturaContratada => ({
+    id: "a1",
+    direcao: "receber",
+    cliente_id: "cli-2",
+    descricao: "Assinatura Plano PRO - CRM Scope System",
+    plano: "Pro",
+    valor: 399,
+    ciclo: "mensal",
+    inicio: "2026-02-01",
+    fim: null,
+    status: "Ativa",
+    ...over,
+  });
+
+  it("achata contrato e assinatura no mesmo formato, com a fonte declarada", () => {
+    const r = servicosContratadosParaContrato([contrato()], [assinatura()]);
+    expect(r).toHaveLength(2);
+    expect(r[0]).toMatchObject({
+      referencia: "c1",
+      origem: "contrato",
+      cliente_id: "cli-1",
+      rotulo: "WebDesign - Manutenção Recorrente",
+      valor: 850,
+      recorrencia: "Mensal",
+      ativo: true,
+      fonte: "scopefinance",
+    });
+    expect(r[1]).toMatchObject({
+      referencia: "a1",
+      origem: "assinatura",
+      rotulo: "Assinatura Plano PRO - CRM Scope System",
+      plano: "Pro",
+      valor: 399,
+      ativo: true,
+    });
+  });
+
+  it("exclui assinatura `pagar` — é a Scope assinando ferramenta, não cliente", () => {
+    const r = servicosContratadosParaContrato(
+      [],
+      [assinatura({ direcao: "pagar", cliente_id: null, descricao: "Figma Org" })]
+    );
+    expect(r).toEqual([]);
+  });
+
+  it("descarta linha sem cliente e linha sem rótulo — não há o que vincular", () => {
+    const r = servicosContratadosParaContrato(
+      [contrato({ cliente_id: null }), contrato({ id: "c2", servico: "   " })],
+      [assinatura({ id: "a2", descricao: null, plano: null })]
+    );
+    expect(r).toEqual([]);
+  });
+
+  it("cai para `plano` quando a assinatura não tem descrição", () => {
+    const r = servicosContratadosParaContrato([], [assinatura({ descricao: null })]);
+    expect(r[0].rotulo).toBe("Pro");
+  });
+
+  it("`Pausado` atravessa com ativo=false — suspenso não é upsell, e some é pior", () => {
+    const r = servicosContratadosParaContrato(
+      [contrato({ status: "Pausado" })],
+      [assinatura({ status: "Cancelada" })]
+    );
+    expect(r.map((l) => l.ativo)).toEqual([false, false]);
+    expect(r).toHaveLength(2);
+  });
+
+  it("arredonda o valor em centavos — 0.1+0.2 não é 0.3, e o resíduo atravessa a ponte", () => {
+    const r = servicosContratadosParaContrato([contrato({ valor: "1700.005" })], []);
+    expect(r[0].valor).toBe(1700.01);
+  });
+
+  it("valor ausente vira null, nunca zero — zero afirmaria que é de graça", () => {
+    const r = servicosContratadosParaContrato([contrato({ valor: null })], []);
+    expect(r[0].valor).toBeNull();
   });
 });
