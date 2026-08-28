@@ -1,5 +1,6 @@
 import { diagnostico, estadoIntegracao, veredito } from "@/lib/integracao/config";
 import { PainelIntegracao } from "./PainelIntegracao";
+import { BlocosIntegracao } from "./BlocosIntegracao";
 
 export const dynamic = "force-dynamic";
 
@@ -18,5 +19,13 @@ export const dynamic = "force-dynamic";
 export default async function IntegracaoPage() {
   const itens = diagnostico(estadoIntegracao());
   const v = veredito(itens);
-  return <PainelIntegracao itens={itens} veredito={v} />;
+  return (
+    <>
+      <PainelIntegracao itens={itens} veredito={v} />
+      {/* Gerenciar + Testar por integração — pedido do dono em 28/08/2026,
+          nas duas frentes. O painel acima segue medindo presença; os blocos
+          abaixo é que distinguem "preenchido" de "funciona". */}
+      <BlocosIntegracao />
+    </>
+  );
 }
