@@ -1,10 +1,23 @@
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { Badge, Empty, PageHeader } from "@/components/ui";
 import { fmt, fmtDate } from "@/lib/format";
+import { SincronizarCatalogo } from "./SincronizarCatalogo";
 
 export const dynamic = "force-dynamic";
 
 const URL_CATALOGO = "https://dashboard-oficial-scope.vercel.app/servicos";
+
+/**
+ * Data **e hora** — `D-90`. Só a data não distingue "sincronizado agora" de
+ * "sincronizado às 00:52 e parado desde então", e era exatamente essa a
+ * diferença que a tela não deixava ver enquanto o espelho envelhecia.
+ */
+function fmtDataHora(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return fmtDate(String(iso).slice(0, 10));
+  return `${fmtDate(iso.slice(0, 10))} ${d.toISOString().slice(11, 16)} UTC`;
+}
 
 /**
  * **Serviços** — o espelho somente-leitura do catálogo (§5 do plano).
@@ -35,9 +48,22 @@ export default async function ServicosPage() {
 
   const linhas = (data ?? []) as Array<Record<string, unknown>>;
 
+  // A sincronização mais recente de TODAS as linhas: é ela que responde "este
+  // espelho está em dia?". A data por linha continua na coluna, para quem
+  // precisa saber qual linha ficou para trás.
+  const ultimaSync = linhas.reduce<string | null>((maior, s) => {
+    const v = typeof s.sincronizado_em === "string" ? s.sincronizado_em : null;
+    return v && (!maior || v > maior) ? v : maior;
+  }, null);
+  // 24 h porque a reconciliação é diária: passar disso significa que nem o
+  // evento nem o cron chegaram — e aí quem está olhando precisa saber.
+  const atrasado =
+    ultimaSync !== null && Date.now() - new Date(ultimaSync).getTime() > 24 * 60 * 60 * 1000;
+
   return (
     <>
       <PageHeader title="Serviços">
+        <SincronizarCatalogo />
         <a className="btn btn-p" href={URL_CATALOGO} target="_blank" rel="noreferrer">
           <i className="ti ti-external-link" />
           Editar na Dashboard
@@ -49,7 +75,26 @@ export default async function ServicosPage() {
           Esta lista é um <strong>espelho somente leitura</strong>. O catálogo é mantido na Scope
           Dashboard, que é a fonte única de preço — dois catálogos editáveis seriam dois preços
           para o mesmo serviço, e a divergência só apareceria depois de contaminar proposta e
-          comissão. Alterações feitas lá chegam aqui em segundos.
+          comissão. Alterações feitas lá chegam aqui em segundos, e a reconciliação diária
+          remove o que foi apagado.
+          {/* ⚖️ `RNF-19` / `D-90`: o espelho declara DESDE QUANDO ele é
+              espelho. Sem esta frase, um espelho parado há dois dias é
+              visualmente idêntico a um em dia — foi assim que 7 linhas
+              `[DEMO]` passaram por catálogo real entre 28 e 30/08/2026. */}
+          {ultimaSync && (
+            <>
+              {" "}
+              Última sincronização: <strong>{fmtDataHora(ultimaSync)}</strong>
+              {atrasado && (
+                <>
+                  {" "}
+                  — <span className="c-red">mais de 24 h atrás</span>; use{" "}
+                  <em>Sincronizar agora</em>
+                </>
+              )}
+              .
+            </>
+          )}
         </p>
       </div>
 
@@ -101,7 +146,7 @@ export default async function ServicosPage() {
                   <Badge s={s.ativo ? "ativo" : "inativo"} />
                 </td>
                 <td className="tiny muted">
-                  {fmtDate(String(s.sincronizado_em ?? "").slice(0, 10))}
+                  {fmtDataHora(typeof s.sincronizado_em === "string" ? s.sincronizado_em : null)}
                 </td>
               </tr>
             ))}

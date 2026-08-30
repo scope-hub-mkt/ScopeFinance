@@ -1,6 +1,10 @@
 import { requireUser } from "@/lib/supabase/auth";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
-import { entregarFila, reconciliarComDashboard } from "@/lib/integracao/sincronia";
+import {
+  entregarFila,
+  reconciliarComDashboard,
+  reconciliarServicos,
+} from "@/lib/integracao/sincronia";
 import { ok, handleError } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +27,11 @@ export async function POST() {
     const supabase = createSupabaseAdmin();
     const enviados = await entregarFila(supabase);
     const recebidos = await reconciliarComDashboard(supabase);
-    return ok({ ok: true, enviados, recebidos });
+    // O catálogo na mesma passada (`D-90`): quem aperta "Sincronizar agora"
+    // espera que a palavra signifique tudo, não só cliente. E é esta chamada
+    // que **poda** — a única que remove do espelho o que a Dashboard apagou.
+    const catalogo = await reconciliarServicos(supabase);
+    return ok({ ok: true, enviados, recebidos, catalogo });
   } catch (e) {
     return handleError(e);
   }

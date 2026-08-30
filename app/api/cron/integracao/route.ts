@@ -1,6 +1,10 @@
 import { NextRequest } from "next/server";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
-import { entregarFila, reconciliarComDashboard } from "@/lib/integracao/sincronia";
+import {
+  entregarFila,
+  reconciliarComDashboard,
+  reconciliarServicos,
+} from "@/lib/integracao/sincronia";
 import { processarPendentes, saudeDaFila } from "@/lib/asaas/processar";
 import { ok, fail, handleError } from "@/lib/api";
 
@@ -35,6 +39,13 @@ export async function GET(req: NextRequest) {
 
     const recebidos = await reconciliarComDashboard(supabase);
 
+    // ⚖️ O catálogo entra aqui pela mesma razão que os clientes (`D-90`): o
+    // espelho só era escrito por evento, e evento não cobre o que foi
+    // APAGADO. Sem esta passada, dado de demonstração apagado na Dashboard
+    // ficava na tela `Serviços` daqui para sempre — foi o que aconteceu
+    // entre 28 e 30/08/2026.
+    const catalogo = await reconciliarServicos(supabase);
+
     // ⚖️ A varredura do Asaas entra aqui como TERCEIRA camada, não como a
     // principal. A primeira é o `after()` da própria rota do webhook; a
     // segunda é o workflow do GitHub Actions a cada 15 min. Esta é a que
@@ -44,7 +55,7 @@ export async function GET(req: NextRequest) {
     const filaAsaas = await saudeDaFila(supabase);
     if (filaAsaas.alerta) console.error("[asaas][ALERTA]", filaAsaas.motivo);
 
-    return ok({ ok: true, enviados, recebidos, asaas, fila_asaas: filaAsaas });
+    return ok({ ok: true, enviados, recebidos, catalogo, asaas, fila_asaas: filaAsaas });
   } catch (e) {
     return handleError(e);
   }

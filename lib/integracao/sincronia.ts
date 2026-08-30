@@ -466,3 +466,168 @@ export async function reconciliarComDashboard(
 
   return r;
 }
+
+// ─── RECONCILIAÇÃO DO CATÁLOGO: a que também PODA ───────────────────
+
+export interface ResultadoReconciliacaoServicos {
+  lidos: number;
+  criados: number;
+  atualizados: number;
+  /** Linhas apagadas do espelho por não existirem mais na Dashboard. */
+  podados: number;
+  /** Nomes do que foi podado — some da tela, aparece no relatório. */
+  podados_nomes: string[];
+  /** Idade do retrato lido, em segundos. `null` se a Dashboard não a declarou. */
+  retrato_idade_s: number | null;
+  motivo?: string;
+}
+
+/**
+ * Puxa o catálogo inteiro da Dashboard, concilia o espelho **e poda o que não
+ * existe mais lá** — `D-90` (30/08/2026).
+ *
+ * ⚠️ **Por que precisou existir, medido em 30/08/2026.** O espelho só era
+ * escrito por evento empurrado. Evento cobre o que muda depois que ele passou
+ * a existir; **não cobre o que foi apagado**. O estado encontrado:
+ *
+ * | | Catálogo da Dashboard | `servicos_espelho` aqui |
+ * |---|---|---|
+ * | serviços | 20 | 15 |
+ * | produtos do CRM | 11 | **0** |
+ * | linhas `[DEMO]` | 0 (apagadas lá) | **7** |
+ * | linhas de teste (`PROBE`, `Prova`) | 0 | **3** |
+ * | última escrita | — | 28/08 15:58 |
+ *
+ * O dono via, na tela `Serviços`, um catálogo de dois dias antes cheio de
+ * dado de demonstração que ele mandou apagar. Nada estava quebrado: o espelho
+ * fazia exatamente o que sabia fazer — **acrescentar**.
+ *
+ * ⛔ **A poda é a metade perigosa, e por isso ela tem três travas:**
+ *
+ * 1. **`completo: false` cancela a poda.** Lista truncada pelo teto não é
+ *    retrato do catálogo; podar por ela apagaria serviço vivo.
+ * 2. **Só poda linha sincronizada ANTES de `gerado_em`.** O retrato é uma foto
+ *    de um instante; serviço que chegou por evento **depois** dela é
+ *    informação mais nova, e uma foto velha não desfaz o que veio depois.
+ *    Sem esta regra, um serviço criado na Dashboard entre a produção do
+ *    retrato e a leitura dele seria criado por evento e apagado pela poda —
+ *    o clássico ir-e-voltar que ninguém consegue reproduzir.
+ * 3. **Só poda o que é `fonte = 'dashboard'`.** Linha de outra origem não é
+ *    espelho de nada que esta lista represente.
+ *
+ * ⚖️ **E poda de verdade, não marca inativo.** `servico.encerrado` é que marca
+ * inativo, e o encerrado **continua vindo nesta lista** (a Dashboard exporta
+ * inativo também). Chegar aqui como ausente significa que a linha não existe
+ * mais no cadastro de origem — não que ela saiu do catálogo vendável.
+ */
+export async function reconciliarServicos(
+  supabase: SupabaseClient
+): Promise<ResultadoReconciliacaoServicos> {
+  const vazio: ResultadoReconciliacaoServicos = {
+    lidos: 0,
+    criados: 0,
+    atualizados: 0,
+    podados: 0,
+    podados_nomes: [],
+    retrato_idade_s: null,
+  };
+  const { dashboardBase: base, dashboardApiKey: chave } = estadoIntegracao();
+  if (!base || !chave) {
+    return {
+      ...vazio,
+      motivo:
+        "Reconciliação do catálogo não provisionada: defina SCOPE_DASHBOARD_API_BASE e SCOPE_DASHBOARD_API_KEY_OUT.",
+    };
+  }
+
+  interface Exportado {
+    dados?: Array<Record<string, unknown>>;
+    completo?: boolean;
+    gerado_em?: string;
+    idade_s?: number;
+  }
+
+  let corpo: Exportado;
+  try {
+    const resp = await fetch(`${base}/servicos-catalogo`, {
+      headers: { Authorization: `Bearer ${chave}` },
+      signal: AbortSignal.timeout(15_000),
+      cache: "no-store",
+    });
+    if (!resp.ok) return { ...vazio, motivo: await descreverResposta(resp) };
+    corpo = (await resp.json()) as Exportado;
+  } catch (e) {
+    return { ...vazio, motivo: e instanceof Error ? e.message : "erro de rede" };
+  }
+
+  const remotos = corpo.dados ?? [];
+  const geradoEm = typeof corpo.gerado_em === "string" ? corpo.gerado_em : null;
+  const r: ResultadoReconciliacaoServicos = {
+    ...vazio,
+    lidos: remotos.length,
+    retrato_idade_s: typeof corpo.idade_s === "number" ? corpo.idade_s : null,
+    podados_nomes: [],
+  };
+
+  const { data: locais } = await supabase
+    .from("servicos_espelho")
+    .select("id, nome, fonte, sincronizado_em");
+  type Local = { id: string; nome: string; fonte: string | null; sincronizado_em: string | null };
+  const antes = new Set(((locais ?? []) as Local[]).map((s) => s.id));
+
+  const texto = (v: unknown) => (typeof v === "string" && v ? v : null);
+  const numero = (v: unknown) => (v === null || v === undefined ? null : Number(v));
+  const agora = new Date().toISOString();
+  const vistos = new Set<string>();
+
+  for (const remoto of remotos) {
+    const id = texto(remoto.servico_id) ?? texto(remoto.id);
+    const nome = typeof remoto.nome === "string" ? remoto.nome.trim() : "";
+    if (!id || !nome) continue;
+    vistos.add(id);
+
+    const ativo = remoto.ativo !== false;
+    const { error } = await supabase.from("servicos_espelho").upsert(
+      {
+        id,
+        nome,
+        slug: texto(remoto.slug),
+        area: texto(remoto.area),
+        tipo_cobranca: texto(remoto.tipo_cobranca),
+        preco_tabela: numero(remoto.preco_tabela),
+        custo: numero(remoto.custo),
+        recorrencia: texto(remoto.recorrencia),
+        ativo,
+        // Reconciliação não inventa data de encerramento: ela não sabe QUANDO
+        // o serviço saiu do catálogo, só que ele está inativo agora. Quem sabe
+        // a data é o evento `servico.encerrado`, e ele já a gravou.
+        sincronizado_em: agora,
+        fonte: "dashboard",
+      },
+      { onConflict: "id" }
+    );
+    if (error) continue;
+    if (antes.has(id)) r.atualizados++;
+    else r.criados++;
+  }
+
+  // ── A poda, com as três travas ────────────────────────────────────
+  if (corpo.completo === true && geradoEm) {
+    for (const local of (locais ?? []) as Local[]) {
+      if (vistos.has(local.id)) continue;
+      if ((local.fonte ?? "dashboard") !== "dashboard") continue;
+      // Trava 2: nascido depois do retrato → informação mais nova que a foto.
+      if (local.sincronizado_em && local.sincronizado_em > geradoEm) continue;
+      const { error } = await supabase.from("servicos_espelho").delete().eq("id", local.id);
+      if (error) continue;
+      r.podados++;
+      r.podados_nomes.push(local.nome);
+    }
+  } else if (corpo.completo !== true) {
+    r.motivo =
+      "A Dashboard declarou a lista INCOMPLETA (bateu no teto) — conciliei o que veio e NÃO podei: " +
+      "apagar por lista truncada removeria serviço vivo.";
+  }
+
+  return r;
+}
