@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { assinarEstiloHub } from "./auth";
 import { estadoIntegracao } from "./config";
 import { interpretarEvento, normalizarDoc, type Envelope } from "./contrato";
+import { apagarSnapshots } from "../etl/snapshot";
 
 /**
  * A via de mão dupla com a Scope Dashboard.
@@ -119,6 +120,9 @@ export async function aplicarEvento(
   }
 
   await marcarProcessado(supabase, env.id, null);
+  // `D-91` — cliente replicado da Dashboard muda a lista sem passar pelas
+  // rotas de escrita daqui; sem esta linha ele demoraria o TTL para aparecer.
+  await apagarSnapshots("clientes:");
   return { estado: "aplicado", acao: leitura.acao, cliente_id: cliente.id };
 }
 

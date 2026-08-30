@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/supabase/auth";
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
 import { isResource, sanitizeInput } from "@/lib/resources";
 import { ok, fail, handleError } from "@/lib/api";
+import { apagarSnapshots } from "@/lib/etl/snapshot";
 import { enfileirarEvento, entregarFila } from "@/lib/integracao/sincronia";
 
 export const dynamic = "force-dynamic";
@@ -51,6 +52,11 @@ export async function PATCH(
       after(() => entregarFila(supabase, 10));
     }
 
+    // `D-91` — quem escreve derruba o retrato do recurso. Sem isto, a tela
+    // de Clientes mostraria a lista antiga até o TTL vencer: o pior sintoma
+    // de cache, "salvei e não mudou", que some sozinho e ninguém reproduz.
+    await apagarSnapshots(`${resource}:`);
+
     return ok(data);
   } catch (e) {
     return handleError(e);
@@ -80,6 +86,11 @@ export async function DELETE(
     const supabase = createSupabaseAdmin();
     const { error } = await supabase.from(resource).delete().eq("id", id);
     if (error) return fail(error.message, 500);
+    // `D-91` — quem escreve derruba o retrato do recurso. Sem isto, a tela
+    // de Clientes mostraria a lista antiga até o TTL vencer: o pior sintoma
+    // de cache, "salvei e não mudou", que some sozinho e ninguém reproduz.
+    await apagarSnapshots(`${resource}:`);
+
     return ok({ ok: true });
   } catch (e) {
     return handleError(e);

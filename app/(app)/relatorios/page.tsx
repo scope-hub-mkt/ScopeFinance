@@ -1,11 +1,13 @@
 "use client";
 
-import { useStore } from "@/lib/store";
+import { useStore, useRecursos } from "@/lib/store";
 import { BarrasH, PageHeader, serie } from "@/components/ui";
 import { fmt, monthlyValue } from "@/lib/format";
 
 export default function RelatoriosPage() {
   const { db, getCN } = useStore();
+  // `D-91`: esta tela pede o que usa — antes o provider trazia as 10 tabelas.
+  useRecursos("assinaturas", "bancos", "contas_pagar", "contas_receber");
 
   const group = (rows: { key: string; valor: number }[]) => {
     const m: Record<string, number> = {};

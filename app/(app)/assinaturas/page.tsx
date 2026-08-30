@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useStore } from "@/lib/store";
+import { useStore, useRecursos } from "@/lib/store";
 import { Badge, Field, Modal, MetricGrid, PageHeader } from "@/components/ui";
 import { fmt, fmtDate, today, monthlyValue } from "@/lib/format";
 import { CICLOS_EMBUTIDOS, type CicloDef } from "@/lib/ciclos";
@@ -10,6 +10,8 @@ type Form = Record<string, any>;
 
 export default function AssinaturasPage() {
   const { db, create, update, remove, gerarRecorrencias, getCN } = useStore();
+  // `D-91`: esta tela pede o que usa — antes o provider trazia as 10 tabelas.
+  useRecursos("assinaturas", "bancos", "clientes");
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<Form>({});
   const [saving, setSaving] = useState(false);

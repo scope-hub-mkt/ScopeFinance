@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useStore } from "@/lib/store";
+import { useStore, useRecursos } from "@/lib/store";
 import { Badge, Field, Modal, PageHeader } from "@/components/ui";
 import { fmt, fmtDate } from "@/lib/format";
 
@@ -9,6 +9,8 @@ type Form = Record<string, any>;
 
 export default function NotasFiscaisPage() {
   const { db, emitirNF, getCN } = useStore();
+  // `D-91`: esta tela pede o que usa — antes o provider trazia as 10 tabelas.
+  useRecursos("clientes", "notas_fiscais");
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<Form>({});
   const [saving, setSaving] = useState(false);

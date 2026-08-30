@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useStore } from "@/lib/store";
+import { useStore, useRecursos } from "@/lib/store";
 import { Field, Modal, PageHeader } from "@/components/ui";
 import { fmt } from "@/lib/format";
 
@@ -9,6 +9,8 @@ type Form = Record<string, any>;
 
 export default function CartoesPage() {
   const { db, create, update, remove } = useStore();
+  // `D-91`: esta tela pede o que usa — antes o provider trazia as 10 tabelas.
+  useRecursos("cartoes");
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<Form>({});
   const [saving, setSaving] = useState(false);

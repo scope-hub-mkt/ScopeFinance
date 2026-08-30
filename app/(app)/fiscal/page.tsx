@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useStore } from "@/lib/store";
+import { useStore, useRecursos } from "@/lib/store";
 import { Field, Modal, PageHeader } from "@/components/ui";
 import type { RetencaoFiscal } from "@/lib/types";
 
@@ -30,6 +30,8 @@ const hoje = () => new Date().toISOString().slice(0, 10);
 
 export default function FiscalPage() {
   const { db, create, update, remove } = useStore();
+  // `D-91`: esta tela pede o que usa — antes o provider trazia as 10 tabelas.
+  useRecursos("retencoes_fiscais");
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<Form>({});
   const [salvando, setSalvando] = useState(false);

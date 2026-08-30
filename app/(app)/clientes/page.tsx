@@ -1,122 +1,40 @@
-"use client";
+import { clientesViaEtl } from "@/lib/etl/alimentadores";
+import { PageHeader } from "@/components/ui";
+import { ClientesTabela } from "./ClientesTabela";
 
-import { useState } from "react";
-import { useStore } from "@/lib/store";
-import { Badge, Field, Modal, PageHeader } from "@/components/ui";
+export const dynamic = "force-dynamic";
 
-type Form = Record<string, any>;
-
-export default function ClientesPage() {
-  const { db, create, update, remove } = useStore();
-  const [search, setSearch] = useState("");
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState<Form>({});
-  const [saving, setSaving] = useState(false);
-
-  const novo = () => { setForm({ status: "Ativo", tipo: "Pessoa Física" }); setOpen(true); };
-  const editar = (c: Form) => { setForm(c); setOpen(true); };
-
-  const salvar = async () => {
-    if (!form.nome) { alert("Nome é obrigatório"); return; }
-    setSaving(true);
-    try {
-      if (form.id) await update("clientes", form.id, form);
-      else await create("clientes", form);
-      setOpen(false);
-    } catch { /* toast já exibido */ } finally { setSaving(false); }
-  };
-
-  const excluir = async (id: string) => {
-    if (confirm("Excluir cliente?")) await remove("clientes", id);
-  };
-
-  const set = (k: string) => (e: any) => setForm((f) => ({ ...f, [k]: e.target.value }));
-
-  const q = search.toLowerCase();
-  const list = db.clientes.filter(
-    (c) => !q || c.nome?.toLowerCase().includes(q) || (c.email || "").toLowerCase().includes(q)
-  );
+/**
+ * **Clientes** — servidor, desde 30/08/2026 (`D-91`).
+ *
+ * ⚠️ **O que esta tela era até hoje, e por que mudou.** Ela era um componente
+ * de cliente que lia `useStore()`. O `StoreProvider` mora em `AppFrame`, e o
+ * `useEffect` dele buscava **as 10 tabelas inteiras** (`/api/clientes`,
+ * `/api/contratos`, `/api/assinaturas`, `/api/lancamentos`, …) — completas,
+ * com todas as colunas, **em toda navegação do sistema**, inclusive nas telas
+ * que usam uma só delas.
+ *
+ * O dono nomeou o defeito em 30/08/2026: *"o sistema possui uma inteligência
+ * de dados que isola o back-end, ele faz os cálculos e requisições necessárias
+ * e devolve um json que alimenta o front, deixando ele extremamente leve"* —
+ * e aqui era o oposto exato.
+ *
+ * Agora: **12 colunas escolhidas, do servidor, com prazo de validade
+ * declarado**. O CRUD continua existindo, numa ilha de cliente que fala com a
+ * mesma API de antes e pede um `router.refresh()` — não uma segunda carga da
+ * tabela.
+ */
+export default async function ClientesPage() {
+  const retrato = await clientesViaEtl();
 
   return (
     <>
-      <PageHeader title="Clientes">
-        <button className="btn btn-p" onClick={novo}><i className="ti ti-plus" />Novo cliente</button>
-      </PageHeader>
-
-      <div className="sbar">
-        <i className="ti ti-search muted" />
-        <input placeholder="Buscar por nome ou email..." value={search} onChange={(e) => setSearch(e.target.value)} />
-        <span className="tiny">{list.length} cliente(s)</span>
-      </div>
-
-      <div className="card tbl-wrap">
-        <table>
-          <thead>
-            <tr><th>Nome</th><th>Tipo</th><th>Email</th><th>Telefone</th><th>Origem</th><th>Status</th><th>Ações</th></tr>
-          </thead>
-          <tbody>
-            {!list.length && <tr><td colSpan={7}><div className="empty">Nenhum cliente cadastrado</div></td></tr>}
-            {list.map((c) => (
-              <tr key={c.id}>
-                <td>
-                  <strong>{c.nome}</strong>
-                  {c.doc && <><br /><span className="tiny">{c.doc}</span></>}
-                </td>
-                <td className="muted">{c.tipo || "—"}</td>
-                <td className="muted">{c.email || "—"}</td>
-                <td>
-                  {/* Procedência declarada (RNF-19 da Dashboard): um cliente
-                      que chegou pela replicação e um que foi digitado aqui não
-                      são a mesma coisa na hora de auditar uma divergência. */}
-                  <span className={`bdg ${c.origem === "dashboard" ? "bdg-b" : "bdg-x"}`}>
-                    {c.origem === "dashboard" ? "Dashboard" : "Finance"}
-                  </span>
-                </td>
-                <td><Badge s={c.status || "Ativo"} /></td>
-                <td>
-                  <div className="actions">
-                    <button className="btn btn-sm" onClick={() => editar(c)}><i className="ti ti-edit" /></button>
-                    <button className="btn btn-sm btn-d" onClick={() => excluir(c.id)}><i className="ti ti-trash" /></button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {open && (
-        <Modal title="Cliente" onClose={() => setOpen(false)}>
-          <div className="fgrid">
-            <Field label="Nome *"><input value={form.nome || ""} onChange={set("nome")} placeholder="Nome completo" /></Field>
-            <Field label="Tipo">
-              <select value={form.tipo || "Pessoa Física"} onChange={set("tipo")}>
-                <option>Pessoa Física</option><option>Pessoa Jurídica</option>
-              </select>
-            </Field>
-            <Field label="CPF/CNPJ"><input value={form.doc || ""} onChange={set("doc")} /></Field>
-            <Field label="Email"><input type="email" value={form.email || ""} onChange={set("email")} /></Field>
-            <Field label="Telefone"><input value={form.tel || ""} onChange={set("tel")} /></Field>
-            <Field label="Status">
-              <select value={form.status || "Ativo"} onChange={set("status")}>
-                <option>Ativo</option><option>Inativo</option><option>Prospect</option>
-              </select>
-            </Field>
-            <Field label="Endereço" span><input value={form.endereco || ""} onChange={set("endereco")} /></Field>
-            <Field label="Observações" span><textarea value={form.obs || ""} onChange={set("obs")} /></Field>
-          </div>
-          <p className="tiny" style={{ marginTop: 10, lineHeight: 1.6 }}>
-            ⚠ Este cadastro é compartilhado com a Scope Dashboard: salvar aqui
-            replica para lá com o mesmo id. O CPF/CNPJ é único — comparado só
-            pelos dígitos, então “12.345.678/0001-90” e “12345678000190” são o
-            mesmo documento.
-          </p>
-          <div className="mact">
-            <button className="btn" onClick={() => setOpen(false)}>Cancelar</button>
-            <button className="btn btn-p" onClick={salvar} disabled={saving}>{saving ? "Salvando..." : "Salvar"}</button>
-          </div>
-        </Modal>
-      )}
+      <PageHeader title="Clientes" />
+      <ClientesTabela
+        clientes={retrato.dados.clientes}
+        truncado={retrato.dados.truncado}
+        idadeS={retrato.idade_s}
+      />
     </>
   );
 }

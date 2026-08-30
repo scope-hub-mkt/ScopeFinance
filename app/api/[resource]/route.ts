@@ -5,6 +5,7 @@ import { isResource, sanitizeInput, RESOURCES } from "@/lib/resources";
 import { ok, fail, handleError } from "@/lib/api";
 import { today } from "@/lib/format";
 import { enfileirarEvento, entregarFila } from "@/lib/integracao/sincronia";
+import { apagarSnapshots } from "@/lib/etl/snapshot";
 
 export const dynamic = "force-dynamic";
 
@@ -131,6 +132,11 @@ export async function POST(
       // Dashboard, e a outbox garante o evento mesmo se esta passada falhar.
       after(() => entregarFila(supabase, 10));
     }
+
+    // `D-91` — quem escreve derruba o retrato do recurso. Sem isto, a tela
+    // de Clientes mostraria a lista antiga até o TTL vencer: o pior sintoma
+    // de cache, "salvei e não mudou", que some sozinho e ninguém reproduz.
+    await apagarSnapshots(`${resource}:`);
 
     return ok(data, 201);
   } catch (e) {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useStore } from "@/lib/store";
+import { useStore, useRecursos } from "@/lib/store";
 import { Field, Modal } from "./ui";
 import { fmt, today } from "@/lib/format";
 
@@ -15,6 +15,8 @@ export function BaixaModal({
   onClose: () => void;
 }) {
   const { db, pagar } = useStore();
+  // `D-91`: esta tela pede o que usa — antes o provider trazia as 10 tabelas.
+  useRecursos("bancos");
   const [contaId, setContaId] = useState<string>(item.conta_id || "");
   const [data, setData] = useState<string>(today());
   const [registrar, setRegistrar] = useState(true);

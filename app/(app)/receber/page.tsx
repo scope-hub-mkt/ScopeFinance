@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useStore } from "@/lib/store";
+import { useStore, useRecursos } from "@/lib/store";
 import { Badge, Field, Modal, MetricGrid, PageHeader } from "@/components/ui";
 import { BaixaModal } from "@/components/BaixaModal";
 import { fmt, fmtDate, today } from "@/lib/format";
@@ -11,6 +11,8 @@ type Tab = "todos" | "pendente" | "pago" | "vencido";
 
 export default function ReceberPage() {
   const { db, create, update, remove, emitirNF, getCN } = useStore();
+  // `D-91`: esta tela pede o que usa — antes o provider trazia as 10 tabelas.
+  useRecursos("clientes", "contas_receber");
   const [tab, setTab] = useState<Tab>("todos");
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<Form>({});
