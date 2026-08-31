@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useStore, useRecursos } from "@/lib/store";
-import { Badge, Field, Modal, MetricGrid, PageHeader } from "@/components/ui";
+import { Badge, Field, Modal, MetricGrid, PageHeader, Dinheiro } from "@/components/ui";
 import { fmt, fmtDate, today, monthlyValue } from "@/lib/format";
 import { CICLOS_EMBUTIDOS, type CicloDef } from "@/lib/ciclos";
 
@@ -144,12 +144,12 @@ export default function AssinaturasPage() {
                     {a.direcao === "receber" ? "A receber" : "A pagar"}
                   </span>
                 </td>
-                <td>{a.direcao === "receber" ? getCN(a.cliente_id) : a.fornecedor}</td>
+                <td className="sigilo">{a.direcao === "receber" ? getCN(a.cliente_id) : a.fornecedor}</td>
                 <td>
                   {a.direcao === "receber" && a.plano ? <span className="bdg bdg-a">{a.plano}</span> : null}
                   {a.descricao ? <span style={{ marginLeft: a.plano ? 6 : 0 }}>{a.descricao}</span> : null}
                 </td>
-                <td className="c-orange" style={{ fontWeight: 500 }}>{fmt(a.valor)}<br /><span className="tiny">{a.ciclo}</span></td>
+                <td className="c-orange" style={{ fontWeight: 500 }}><Dinheiro v={a.valor} /><br /><span className="tiny">{a.ciclo}</span></td>
                 <td className="tiny">{fmtDate(a.proximo_venc)}</td>
                 <td><Badge s={a.status} /></td>
                 <td>

@@ -2,6 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { lerDelta, pctDelta } from "@/lib/kpi";
+import { fmt } from "@/lib/format";
+import {
+  ATTR_PRIVACIDADE,
+  CHAVE_PRIVACIDADE,
+  MODO_PADRAO,
+  alternarModo,
+  normalizarModo,
+  rotuloAcao,
+  rotuloModo,
+  type ModoPrivacidade,
+} from "@/lib/privacidade";
 
 // ─── TEMA ───────────────────────────────────────────────────────────
 /**
@@ -45,17 +56,124 @@ export function BotaoTema() {
 
   const rotulo = tema === "escuro" ? "Usar tema claro" : "Usar tema escuro";
 
+  /* ♻️ 31/08/2026 (`RF-90`): era bloco com texto no rodapé da lateral e
+     virou ícone na topbar, ao lado do interruptor de privacidade. A
+     mecânica não mudou — só a casca e o lugar. O rótulo por extenso vive
+     agora no `title`/`aria-label`, que é onde ele nunca disputa espaço. */
   return (
     <button
-      className="btn btn-sm btn-block"
+      className="tb-btn"
       onClick={alternar}
       title={rotulo}
       aria-label={rotulo}
       type="button"
     >
-      <i className={`ti ${tema === "escuro" ? "ti-sun" : "ti-moon"}`} /> {rotulo}
+      <i className={`ti ${tema === "escuro" ? "ti-sun" : "ti-moon"}`} aria-hidden="true" />
     </button>
   );
+}
+
+/**
+ * O interruptor Corporativo × Privacidade — `RF-90` (`D-92`).
+ *
+ * Mesma mecânica do `BotaoTema` ao lado, de propósito: atributo no `<html>`,
+ * escolha em `localStorage`, script inline no `layout.tsx` pintando antes do
+ * React. O contrato inteiro — e o que este modo **não** protege — está em
+ * `lib/privacidade.ts`.
+ *
+ * ⚠️ O estado nasce `null` e só é lido depois de montar: no servidor o
+ * atributo ainda não existe, e chutar "corporativo" no HTML renderizaria o
+ * ícone errado por um quadro para quem tem o modo ligado.
+ *
+ * ⚖️ **Ligado se anuncia com etiqueta, não só com ícone.** Um olho cortado de
+ * 16px é fácil demais de não ver, e o modo de falha aqui é caro: compartilhar
+ * a tela achando que ligou.
+ */
+export function BotaoPrivacidade() {
+  const [modo, setModo] = useState<ModoPrivacidade | null>(null);
+
+  useEffect(() => {
+    setModo(normalizarModo(document.documentElement.getAttribute(ATTR_PRIVACIDADE)));
+  }, []);
+
+  const alternar = () => {
+    const novo = alternarModo(modo ?? MODO_PADRAO);
+    document.documentElement.setAttribute(ATTR_PRIVACIDADE, novo);
+    try {
+      localStorage.setItem(CHAVE_PRIVACIDADE, novo);
+    } catch {
+      /* modo privado do navegador: a escolha vale só nesta aba */
+    }
+    setModo(novo);
+  };
+
+  const atual = modo ?? MODO_PADRAO;
+
+  /**
+   * ♻️ 31/08/2026 — os dois modos escritos, sempre. Era um botão de olho que
+   * só se nomeava quando ligado; o dono pediu *"podendo optar por Modo
+   * Corporativo e Modo Privacidade"*, e um alternador que esconde metade das
+   * opções não é escolha entre duas coisas.
+   *
+   * ⚠️ `radiogroup`, não `tablist`: não há painel sendo trocado — são dois
+   * estados mutuamente exclusivos do mesmo conteúdo.
+   */
+  return (
+    <div className="seg tb-priv" role="radiogroup" aria-label="Modo de exibição dos dados">
+      {(["corporativo", "privacidade"] as const).map((m) => (
+        <button
+          key={m}
+          type="button"
+          role="radio"
+          aria-checked={atual === m}
+          className={atual === m ? "act" : ""}
+          onClick={() => atual !== m && alternar()}
+          title={m === atual ? rotuloModo(m) : rotuloAcao(atual)}
+        >
+          <i
+            className={`ti ${m === "privacidade" ? "ti-eye-off" : "ti-eye"}`}
+            aria-hidden="true"
+          />
+          <span className="tb-priv-rot">{m === "privacidade" ? "Privacidade" : "Corporativo"}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Dinheiro na tela — `RF-90`.
+ *
+ * ⚖️ **Por que um componente e não a classe solta.** Este sistema tem quase
+ * quarenta pontos que escrevem `fmt(valor)` em JSX, cada um com a sua casca
+ * (`<td className="c-orange">`, `<strong>`, `<span className="tiny">`). Marcar
+ * a casca de cada um funcionaria hoje e falharia no próximo: a marca é
+ * invisível na revisão, e um valor novo nasce nítido sem nada ficar vermelho.
+ * Com `<Dinheiro>`, escrever dinheiro **é** marcar dinheiro.
+ *
+ * ⛔ Não substitui `fmt()` — quem precisa da string (um `title`, uma
+ * concatenação, um CSV) continua chamando `fmt` direto, e ali a máscara não
+ * se aplica porque não há elemento para mascarar.
+ */
+export function Dinheiro({ v }: { v: number | string | null | undefined }) {
+  return <span className="sigilo">{fmt(v)}</span>;
+}
+
+/**
+ * Marca de sigilo para o que não é dinheiro — nome de cliente, CNPJ, e-mail,
+ * telefone. `as` existe porque identidade quase sempre mora dentro de um
+ * `<td>` ou de um título, e envolver bloco num `<span>` quebra o layout.
+ */
+export function Sigilo({
+  children,
+  as: Tag = "span",
+  className = "",
+}: {
+  children: React.ReactNode;
+  as?: "span" | "div" | "td" | "strong";
+  className?: string;
+}) {
+  return <Tag className={`sigilo ${className}`.trim()}>{children}</Tag>;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -338,11 +456,20 @@ export function BarrasH({
   formatar,
   vazio = "Sem itens para ranquear",
   teto = 6,
+  rotuloSigiloso = false,
 }: {
   itens: { rotulo: string; valor: number }[];
   cor?: string;
   formatar: (n: number) => string;
   vazio?: string;
+  /**
+   * `RF-90` — o rótulo deste gráfico é CATEGORIA em quase todo uso ("Site",
+   * "Aluguel") e **identidade** em um: o ranque de clientes por receita.
+   * Sem esta distinção, ou o Top clientes vaza a carteira ao lado de valores
+   * borrados, ou toda legenda de categoria vira mancha. Achado pela captura
+   * de 31/08/2026, depois de eu ter declarado a identidade coberta.
+   */
+  rotuloSigiloso?: boolean;
   /** Ranque sem teto vira tabela ruim: as 6 primeiras contam a história. */
   teto?: number;
 }) {
@@ -355,7 +482,7 @@ export function BarrasH({
       {itens.slice(0, teto).map((i) => (
         <div key={i.rotulo}>
           <div className="row gr-linha">
-            <span className="gr-rotulo" title={i.rotulo}>
+            <span className={`gr-rotulo${rotuloSigiloso ? " sigilo" : ""}`} title={i.rotulo}>
               {i.rotulo}
             </span>
             <span className="gr-valor">{formatar(i.valor)}</span>

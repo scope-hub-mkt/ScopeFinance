@@ -2,9 +2,8 @@
 
 import { useState } from "react";
 import { useStore, useRecursos } from "@/lib/store";
-import { Badge, Field, Modal, PageHeader } from "@/components/ui";
-import { fmt, fmtDate } from "@/lib/format";
-
+import { Badge, Field, Modal, PageHeader, Dinheiro } from "@/components/ui";
+import { fmtDate } from "@/lib/format";
 type Form = Record<string, any>;
 
 export default function NotasFiscaisPage() {
@@ -67,12 +66,12 @@ export default function NotasFiscaisPage() {
             {db.notas_fiscais.map((n) => (
               <tr key={n.id}>
                 <td className="tiny">{fmtDate(n.data_emissao || n.created_at?.slice(0, 10))}</td>
-                <td>{getCN(n.cliente_id)}</td>
+                <td className="sigilo">{getCN(n.cliente_id)}</td>
                 <td>
                   {n.descricao_servico || "—"}
                   {n.status === "Erro" && n.erro && <><br /><span className="tiny c-red">{n.erro}</span></>}
                 </td>
-                <td className="c-orange" style={{ fontWeight: 500 }}>{fmt(n.valor)}</td>
+                <td className="c-orange" style={{ fontWeight: 500 }}><Dinheiro v={n.valor} /></td>
                 <td className="tiny">{n.numero || "—"}</td>
                 <td><Badge s={n.status} /></td>
                 <td>

@@ -128,6 +128,13 @@
   /* ─── Forma — só estes raios existem ─────────────────────── */
   --r-1:8px;--r-2:10px;--r-3:12px;--r-4:16px;--r-5:20px;--r-max:999px;
 
+  /* ─── Modo Privacidade (RF-90) ──────────────────────────────────── */
+  /* Em `em`, nunca em `px`: o mesmo raio precisa apagar o KPI de 32px e a
+     célula de tabela de 12,5px. Calibrado em pixel para o tile, o dígito
+     pequeno sobreviveria legível — o vazamento que a feature existe para
+     impedir, com o agravante de PARECER protegido. */
+  --sigilo-borrao: 0.42em;
+
   /* ─── Espaço (passo 4px — só estes valores existem) ───────────── */
   --e-1:4px;--e-2:8px;--e-3:12px;--e-4:16px;
   --e-5:20px;--e-6:24px;--e-8:32px;--e-10:40px;
@@ -428,3 +435,155 @@ tbody tr:hover td{background:var(--marca-lav)}
 .login form{display:flex;flex-direction:column;gap:var(--e-4)}
 .login .err{color:var(--critico);font-size:12px;min-height:16px}
 .link{color:var(--marca-tinta);cursor:pointer;background:none;border:none;font-size:12px;padding:0}
+
+/* ── Itens do contrato (1:N) — 31/08/2026 ────────────────────────────
+   Grade de 5 colunas + botão de remover. `minmax(0,…)` em vez de `1fr`
+   puro porque um <select> com nome longo de serviço estoura a coluna e
+   empurra o resto para fora do modal — o padrão de grid que ninguém vê
+   até o primeiro dado real. */
+.itens-contrato{grid-column:1/-1;display:flex;flex-direction:column;gap:var(--e-3);
+  border:1px solid var(--linha);border-radius:var(--r-1);padding:var(--e-3);background:var(--sup-2)}
+.itens-cab{display:flex;align-items:center;justify-content:space-between;gap:var(--e-2)}
+.itens-cab label{font-size:12px;font-weight:500;color:var(--tinta-2)}
+.item-linha{display:grid;gap:var(--e-2);align-items:end;
+  grid-template-columns:minmax(0,1.4fr) minmax(0,1.6fr) minmax(0,.5fr) minmax(0,.8fr) minmax(0,1fr) auto}
+.item-linha .fg{min-width:0}
+.item-remover{margin-bottom:var(--e-1)}
+.itens-soma{display:flex;align-items:center;justify-content:space-between;gap:var(--e-2);
+  flex-wrap:wrap;padding-top:var(--e-2);border-top:1px solid var(--linha);font-size:12px}
+/* Abaixo de 720px a grade de 6 colunas vira ilegível: cada campo passa a
+   ocupar a linha inteira, que é como um formulário se comporta no celular. */
+@media (max-width:720px){.item-linha{grid-template-columns:1fr}}
+
+/* Os serviços listados dentro da linha do contrato, na tabela. */
+.contrato-servicos{display:flex;flex-direction:column;gap:var(--e-1);margin:0;padding:0;list-style:none}
+.contrato-servicos li{display:flex;align-items:center;gap:var(--e-2);flex-wrap:wrap}
+
+/* ═══ TOPBAR (RF-90) ════════════════════════════════════════════════
+   Nasceu em 31/08/2026 por decisão do dono (`D-92`): o interruptor de
+   privacidade precisava do mesmo lugar nos dois sistemas, e aqui não
+   havia barra de topo nenhuma — só a lateral.
+
+   ⚖️ Ela é DELIBERADAMENTE mais magra que a da Dashboard. Lá o topo
+   carrega busca, sino e perfil; aqui carrega o caminho da tela e dois
+   interruptores. Copiar a busca desligada só para "ficar igual" poria
+   um controle falso na tela, que é o oposto de convergir. */
+
+.col{flex:1;display:flex;flex-direction:column;min-width:0;height:100vh}
+.topbar{
+  display:flex;align-items:center;gap:var(--e-3);flex-shrink:0;
+  padding:var(--e-3) var(--e-6);
+  border-bottom:1px solid var(--linha);background:var(--sup);
+  position:sticky;top:0;z-index:15;
+}
+.tb-rota{font-size:12px;color:var(--tinta-2);display:flex;align-items:center;gap:var(--e-2);min-width:0}
+.tb-rota-g{color:var(--tinta-3)}
+.tb-rota-t{font-weight:500;color:var(--tinta);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tb-dir{margin-left:auto;display:flex;align-items:center;gap:var(--e-2)}
+.tb-btn{
+  height:32px;min-width:32px;display:inline-flex;align-items:center;justify-content:center;
+  gap:var(--e-2);border-radius:var(--r-max);border:1px solid var(--linha);
+  background:var(--sup-2);color:var(--tinta-2);cursor:pointer;font-size:16px;
+  transition:background var(--t),color var(--t),border-color var(--t);
+}
+.tb-btn:hover{background:var(--sup-3);color:var(--tinta)}
+
+/* ⚠️ `.main` deixa de rolar a janela e passa a rolar dentro da coluna —
+   é o que mantém a topbar parada. A lateral já era `position:sticky`
+   com `height:100vh`, então a altura da casca não muda. */
+.col > .main{height:auto;min-height:0}
+
+/* ═══ MODO PRIVACIDADE (RF-90) ══════════════════════════════════════
+   Contrato em prosa: `lib/privacidade.ts`. Em uma frase:
+   `data-privacidade="privacidade"` no <html> borra valor e identidade
+   na aplicação inteira, inclusive nas telas que ainda não existem.
+
+   ⚖️ **A lista é mais larga do que a da Dashboard, de propósito.** Lá o
+   painel mistura operação e dinheiro; aqui é sistema financeiro de ponta
+   a ponta, e quase todo número de toda tela é valor. Errar para o lado
+   estreito, aqui, é vazar.
+
+   ⛔ Não é controle de acesso — o valor continua no DOM. A ameaça
+   coberta é olho na sala e captura de tela. */
+
+[data-privacidade="privacidade"] :is(
+  /* Marca explícita — é por onde `<Dinheiro>` passa, e onde entram nome
+     de cliente, CNPJ e e-mail. */
+  .sigilo,
+  /* Tile de KPI */
+  .met-v, .delta,
+  /* Gráfico de barras horizontais — o rótulo fica, o valor some. */
+  .gr-valor
+) {
+  filter: blur(var(--sigilo-borrao));
+  /* Sem isto o valor sai por seleção e Ctrl+C durante a apresentação. */
+  user-select: none;
+  transition: filter var(--t);
+}
+
+/* Alternador segmentado — nasce aqui com o `RF-90`, e é a MESMA casca da
+   §9 da Dashboard (os dois sistemas são pares, `D-44`). O dono pediu os
+   dois modos escritos; um alternador que esconde metade das opções não é
+   escolha entre duas coisas. */
+.seg{display:inline-flex;gap:2px;padding:3px;background:var(--sup-3);border-radius:var(--r-max)}
+.seg button{
+  border:none;background:none;cursor:pointer;
+  padding:4px var(--e-3);border-radius:var(--r-max);
+  font-size:11.5px;font-weight:500;color:var(--tinta-2);
+  transition:background var(--t),color var(--t);
+}
+.seg button:hover{color:var(--tinta)}
+.seg button.act{background:var(--sup);color:var(--tinta);font-weight:600}
+
+.tb-priv button{display:inline-flex;align-items:center;gap:6px}
+.tb-priv button i{font-size:14px;color:var(--tinta-3)}
+/* Só a metade PRIVACIDADE acende: em Corporativo a tela está normal, e um
+   destaque ali chamaria atenção sem dizer nada. */
+.tb-priv button:last-child.act{background:var(--marca-lav);color:var(--marca-tinta)}
+.tb-priv button:last-child.act i{color:var(--marca-tinta)}
+
+/* ⛔ O rótulo NÃO some no estreito: sem ele restam dois ícones de olho
+   lado a lado, indistinguíveis. Some o grupo do caminho, que é contexto. */
+@media(max-width:820px){
+  .tb-rota-g{display:none}
+}
+
+/* ── Usuários e perfil — RF-FIN-10, 31/08/2026 ───────────────────────
+   O ScopeFinance não tinha tela de pessoa nenhuma: nem avatar, nem
+   bloco de aviso dentro de card. Estes são os dois primitivos que
+   faltavam, e ambos saem de token. */
+.card-t{font-size:13px;font-weight:600;color:var(--tinta);margin-bottom:var(--e-3)}
+
+.avatar{
+  width:34px;height:34px;border-radius:var(--r-max);flex-shrink:0;
+  display:inline-flex;align-items:center;justify-content:center;
+  background:var(--marca-lav);color:var(--marca-tinta);
+  font-size:12px;font-weight:600;border:1px solid var(--marca-borda);
+}
+.avatar-sm{width:28px;height:28px;font-size:10.5px}
+/* `object-fit: cover` porque foto de pessoa quase nunca chega quadrada:
+   sem ele, um retrato vertical entra achatado. */
+.avatar-gd{width:96px;height:96px;font-size:32px}
+.avatar-foto{object-fit:cover;background:var(--sup-2)}
+
+.foto-editor{display:flex;align-items:center;gap:var(--e-4);flex-wrap:wrap}
+.foto-editor-acoes{display:flex;flex-direction:column;gap:var(--e-2)}
+/* O `input[type=file]` nativo não aceita estilo; o rótulo é que vira
+   botão, e o campo fica acessível por foco em vez de escondido de todo
+   mundo com `display:none`. */
+.foto-arquivo{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.foto-dica{font-size:11px;color:var(--tinta-3);max-width:34ch}
+
+/* O retorno de uma ação, dentro do card que a disparou. */
+.recado{
+  margin-top:var(--e-3);padding:var(--e-2) var(--e-3);
+  border-radius:var(--r-1);border:1px solid var(--linha);
+  background:var(--sup-2);font-size:12px;color:var(--tinta-2);
+}
+.recado-ok{background:var(--ok-lav);color:var(--ok);border-color:var(--ok-borda)}
+.recado-erro{background:var(--critico-lav);color:var(--critico);border-color:var(--critico-borda)}
+.recado-atencao{background:var(--marca-lav);color:var(--marca-tinta);border-color:var(--marca-borda)}
+.recado-info{background:var(--info-lav);color:var(--info);border-color:var(--info-borda)}
+
+.cel-pessoa{display:flex;align-items:center;gap:var(--e-2)}
+.cel-pessoa-n{font-weight:500}

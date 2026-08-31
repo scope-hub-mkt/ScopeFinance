@@ -99,17 +99,17 @@ function Fila({
             )}
             {linhas.map((c) => (
               <tr key={c.id}>
-                <td>
+                <td className="sigilo">
                   {c.nome}
                   {c.crm_id && <div className="tiny muted">card {c.crm_id}</div>}
                 </td>
-                <td>
+                <td className="sigilo">
                   {/* ⛔ Traço, não "0" nem vazio: ausência de documento é o
                       motivo de a linha estar nesta fila, e precisa se ler como
                       ausência, não como campo esquecido. */}
                   {c.documento_principal ?? <span className="muted">— sem documento</span>}
                 </td>
-                <td className="tiny">
+                <td className="tiny sigilo">
                   {c.email ?? "—"}
                   <br />
                   {c.tel ?? "—"}

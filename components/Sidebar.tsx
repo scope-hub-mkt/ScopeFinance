@@ -3,10 +3,14 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LogoIcon } from "./Logo";
-import { BotaoTema } from "./ui";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
-const NAV: { g: string; items: { href: string; icon: string; l: string }[] }[] = [
+/**
+ * ⚠️ Exportado desde `RF-90`: a topbar (`components/TopBar.tsx`) lê esta
+ * mesma lista para dizer em que tela a pessoa está. Duplicar os rótulos lá
+ * criaria dois nomes para cada rota, e o segundo é o que ninguém atualiza.
+ */
+export const NAV: { g: string; items: { href: string; icon: string; l: string }[] }[] = [
   {
     g: "Visão geral",
     items: [
@@ -48,7 +52,6 @@ const NAV: { g: string; items: { href: string; icon: string; l: string }[] }[] =
     items: [
       { href: "/receber", icon: "ti-arrow-down-circle", l: "Contas a receber" },
       { href: "/pagar", icon: "ti-arrow-up-circle", l: "Contas a pagar" },
-      { href: "/lancamentos", icon: "ti-list", l: "Lançamentos" },
     ],
   },
   {
@@ -68,6 +71,9 @@ const NAV: { g: string; items: { href: string; icon: string; l: string }[] }[] =
   {
     g: "Sistema",
     items: [
+      // `RF-FIN-10` (31/08/2026): até aqui não havia tela de usuário nenhuma —
+      // cadastrar alguém era abrir o painel do Supabase, e não existia papel.
+      { href: "/usuarios", icon: "ti-users-group", l: "Usuários" },
       { href: "/integracao", icon: "ti-plug-connected", l: "Integração" },
       // Fase 7: a fila dos eventos P1/P2 do gateway que pedem um humano.
       // Sem tela, a única forma de descobrir um chargeback seria um `select`.
@@ -113,8 +119,16 @@ export function Sidebar({ userEmail }: { userEmail?: string | null }) {
         ))}
       </div>
       <div className="sb-foot">
-        {userEmail && <div className="sb-user" title={userEmail}>{userEmail}</div>}
-        <BotaoTema />
+        {/* `RF-90`: o e-mail é identidade e borra no Modo Privacidade.
+            `RF-FIN-10` (31/08/2026): e virou o caminho para o próprio cadastro
+            — é no rodapé, junto do e-mail, que quem procura "minha conta"
+            olha, não entre as telas de trabalho. A classe `sigilo` fica: o
+            elemento mudou de tag, o dado continua sendo identidade. */}
+        {userEmail && (
+          <Link href="/perfil" className="sb-user sigilo" title={`${userEmail} — abrir meu perfil`}>
+            {userEmail}
+          </Link>
+        )}
         <button className="btn btn-sm btn-block" onClick={logout}>
           <i className="ti ti-logout" /> Sair
         </button>

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useStore, useRecursos } from "@/lib/store";
-import { Badge, Field, Modal, MetricGrid, PageHeader } from "@/components/ui";
+import { Badge, Field, Modal, MetricGrid, PageHeader, Dinheiro } from "@/components/ui";
 import { BaixaModal } from "@/components/BaixaModal";
 import { fmt, fmtDate, today } from "@/lib/format";
 
@@ -80,9 +80,12 @@ export default function PagarPage() {
               const venc = r.vencimento && r.status === "Pendente" && r.vencimento < t;
               return (
                 <tr key={r.id}>
-                  <td>{r.fornecedor}{r.assinatura_id && <span className="tiny"> · assinatura</span>}</td>
-                  <td>{r.descricao}</td>
-                  <td className="c-red" style={{ fontWeight: 500 }}>{fmt(r.valor)}</td>
+                  <td className="sigilo">{r.fornecedor}{r.assinatura_id && <span className="tiny"> · assinatura</span>}</td>
+                  {/* `RF-90` — a descrição da cobrança carrega o nome do fornecedor
+                      ("Mensalidade - Fulano"). Medido em 31/08/2026:
+                      marcar só a coluna Cliente deixava o nome na coluna ao lado. */}
+                  <td className="sigilo">{r.descricao}</td>
+                  <td className="c-red" style={{ fontWeight: 500 }}><Dinheiro v={r.valor} /></td>
                   <td className="tiny" style={venc ? { color: "var(--critico)" } : {}}>{fmtDate(r.vencimento)}</td>
                   <td><span className="bdg bdg-x">{r.categoria || "—"}</span></td>
                   <td><Badge s={r.status} /></td>

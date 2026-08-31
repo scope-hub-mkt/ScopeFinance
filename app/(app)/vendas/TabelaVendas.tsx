@@ -1,7 +1,6 @@
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
-import { Badge, Empty, PageHeader } from "@/components/ui";
-import { fmt, fmtDate } from "@/lib/format";
-
+import { Badge, Empty, PageHeader, Dinheiro } from "@/components/ui";
+import { fmtDate } from "@/lib/format";
 /**
  * A listagem que serve os quatro recortes de **Vendas** (§8.1 do plano).
  *
@@ -100,8 +99,11 @@ export async function TabelaVendas({
 
               return (
                 <tr key={String(v.id)}>
-                  <td>{String(v.descricao)}</td>
-                  <td>
+                  {/* `RF-90` — a descrição da cobrança carrega o nome do cliente
+                      ("Assinatura Scope System - Fulano"). Medido em 31/08/2026:
+                      marcar só a coluna Cliente deixava o nome na coluna ao lado. */}
+                  <td className="sigilo">{String(v.descricao)}</td>
+                  <td className="sigilo">
                     {v.cliente_id ? (
                       (nomePorId.get(String(v.cliente_id)) ?? "—")
                     ) : (
@@ -116,16 +118,16 @@ export async function TabelaVendas({
                   <td>
                     <Badge s={(v.tipo_venda as string) ?? "avulsa"} />
                   </td>
-                  <td>{contratado == null ? "—" : fmt(Number(contratado))}</td>
+                  <td>{contratado == null ? "—" : <Dinheiro v={Number(contratado)} />}</td>
                   <td>
-                    {cobrado == null ? "—" : fmt(Number(cobrado))}
+                    {cobrado == null ? "—" : <Dinheiro v={Number(cobrado)} />}
                     {diverge && (
                       <div className="tiny" title="cobrou-se diferente do combinado (§4.7)">
                         ⚠ diverge do contratado
                       </div>
                     )}
                   </td>
-                  <td>{v.valor_liquido == null ? "—" : fmt(Number(v.valor_liquido))}</td>
+                  <td>{v.valor_liquido == null ? "—" : <Dinheiro v={Number(v.valor_liquido)} />}</td>
                   <td>{fmtDate(String(v.vencimento ?? "").slice(0, 10))}</td>
                   <td>
                     <Badge s={String(v.status)} titulo={(v.asaas_status as string) ?? undefined} />

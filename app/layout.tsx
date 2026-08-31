@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { SCRIPT_PRIVACIDADE } from "@/lib/privacidade";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -70,6 +71,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="pt-BR" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: SCRIPT_TEMA }} />
+        {/* `RF-90` — o Modo Privacidade pinta junto com o tema, e pelo mesmo
+            motivo elevado ao quadrado: no tema o flash irrita; aqui ele **é
+            o vazamento**. Um piscar do saldo real antes do borrão, com a
+            tela compartilhada, derruba a feature inteira. */}
+        <script dangerouslySetInnerHTML={{ __html: SCRIPT_PRIVACIDADE }} />
         <link
           rel="stylesheet"
           href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css"

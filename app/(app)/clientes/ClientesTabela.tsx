@@ -160,7 +160,10 @@ export function ClientesTabela({
             )}
             {lista.map((c) => (
               <tr key={c.id}>
-                <td>
+                {/* `RF-90` — numa reunião com prospect, o nome de outro
+                    cliente vaza mais do que o valor ao lado. Tipo fica: é
+                    categoria (PF/PJ), não identidade. */}
+                <td className="sigilo">
                   <strong>{c.nome}</strong>
                   {c.doc && (
                     <>
@@ -170,8 +173,8 @@ export function ClientesTabela({
                   )}
                 </td>
                 <td className="muted">{c.tipo || "—"}</td>
-                <td className="muted">{c.email || "—"}</td>
-                <td className="muted">{c.tel || "—"}</td>
+                <td className="muted sigilo">{c.email || "—"}</td>
+                <td className="muted sigilo">{c.tel || "—"}</td>
                 <td>
                   {/* Procedência declarada (RNF-19 da Dashboard): um cliente
                       que chegou pela replicação e um que foi digitado aqui não

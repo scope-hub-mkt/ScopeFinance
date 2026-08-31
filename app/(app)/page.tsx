@@ -1,7 +1,7 @@
 "use client";
 
 import { useStore, useRecursos } from "@/lib/store";
-import { MetricGrid, Empty, type ItemMetrica } from "@/components/ui";
+import { MetricGrid, Empty, type ItemMetrica, Dinheiro } from "@/components/ui";
 import { fmt, fmtDate, today, monthlyValue } from "@/lib/format";
 
 export default function DashboardPage() {
@@ -67,10 +67,10 @@ export default function DashboardPage() {
               <tbody>
                 {p5r.map((r) => (
                   <tr key={r.id}>
-                    <td style={{ maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <td className="sigilo" style={{ maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {getCN(r.cliente_id)}
                     </td>
-                    <td className="c-green" style={{ fontWeight: 500 }}>{fmt(r.valor)}</td>
+                    <td className="c-green" style={{ fontWeight: 500 }}><Dinheiro v={r.valor} /></td>
                     <td className="tiny">{fmtDate(r.vencimento)}</td>
                   </tr>
                 ))}
@@ -91,10 +91,10 @@ export default function DashboardPage() {
               <tbody>
                 {p5p.map((r) => (
                   <tr key={r.id}>
-                    <td style={{ maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <td className="sigilo" style={{ maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {r.fornecedor}
                     </td>
-                    <td className="c-red" style={{ fontWeight: 500 }}>{fmt(r.valor)}</td>
+                    <td className="c-red" style={{ fontWeight: 500 }}><Dinheiro v={r.valor} /></td>
                     <td className="tiny">{fmtDate(r.vencimento)}</td>
                   </tr>
                 ))}
@@ -118,7 +118,7 @@ export default function DashboardPage() {
                 {db.bancos.map((b) => (
                   <tr key={b.id}>
                     <td>{b.nome}</td>
-                    <td className="c-green" style={{ fontWeight: 500 }}>{fmt(b.saldo)}</td>
+                    <td className="c-green" style={{ fontWeight: 500 }}><Dinheiro v={b.saldo} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -141,7 +141,9 @@ export default function DashboardPage() {
                 <div key={c.id} style={{ marginBottom: 12 }}>
                   <div className="row" style={{ fontSize: 12, marginBottom: 4, color: "var(--tinta-2)" }}>
                     <span>{c.nome}</span>
-                    <span style={{ color: "var(--tinta)" }}>{fmt(c.usado)} / {fmt(c.limite)}</span>
+                    <span style={{ color: "var(--tinta)" }}>
+                      <Dinheiro v={c.usado} /> / <Dinheiro v={c.limite} />
+                    </span>
                   </div>
                   <div className="pbar">
                     <div className={`pfill ${cl}`} style={{ width: pct + "%" }} />

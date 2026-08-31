@@ -2,9 +2,8 @@
 
 import { useState } from "react";
 import { useStore, useRecursos } from "@/lib/store";
-import { Field, Modal } from "./ui";
-import { fmt, today } from "@/lib/format";
-
+import { Field, Modal, Dinheiro } from "./ui";
+import { today } from "@/lib/format";
 export function BaixaModal({
   tabela,
   item,
@@ -53,7 +52,7 @@ export function BaixaModal({
     <Modal title={`Dar baixa · ${tipoLabel}`} onClose={onClose}>
       <div style={{ marginBottom: 14, fontSize: 13 }}>
         <strong>{item.descricao}</strong>
-        <span className="c-orange" style={{ marginLeft: 8, fontWeight: 500 }}>{fmt(item.valor)}</span>
+        <span className="c-orange" style={{ marginLeft: 8, fontWeight: 500 }}><Dinheiro v={item.valor} /></span>
       </div>
       <div className="fgrid">
         <Field label="Data da baixa"><input type="date" value={data} onChange={(e) => setData(e.target.value)} /></Field>
@@ -85,7 +84,7 @@ export function BaixaModal({
               />
             </Field>
             <div className="span2 tiny" style={{ marginTop: -4 }}>
-              Base líquida <strong className="c-orange">{fmt(liquido)}</strong> — é sobre
+              Base líquida <strong className="c-orange"><Dinheiro v={liquido} /></strong> — é sobre
               este número que a Scope Dashboard calcula a comissão do comercial.
             </div>
           </>

@@ -2,8 +2,7 @@
 
 import { useState } from "react";
 import { useStore, useRecursos } from "@/lib/store";
-import { Field, Modal, PageHeader } from "@/components/ui";
-import { fmt } from "@/lib/format";
+import { Field, Modal, PageHeader, Dinheiro } from "@/components/ui";
 
 type Form = Record<string, any>;
 
@@ -51,7 +50,7 @@ export default function BancosPage() {
                 <button className="btn btn-sm btn-d" onClick={() => excluir(b.id)}><i className="ti ti-trash" /></button>
               </div>
             </div>
-            <div style={{ fontSize: 26, fontWeight: 500, color: "var(--ok)" }}>{fmt(b.saldo)}</div>
+            <div style={{ fontSize: 26, fontWeight: 500, color: "var(--ok)" }}><Dinheiro v={b.saldo} /></div>
             <div className="tiny" style={{ marginTop: 4 }}>Saldo atual</div>
           </div>
         ))}

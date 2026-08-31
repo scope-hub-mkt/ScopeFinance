@@ -1,7 +1,6 @@
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
-import { Badge, Empty, PageHeader } from "@/components/ui";
-import { fmt, fmtDate } from "@/lib/format";
-
+import { Badge, Empty, PageHeader, Dinheiro } from "@/components/ui";
+import { fmtDate } from "@/lib/format";
 export const dynamic = "force-dynamic";
 
 /**
@@ -113,14 +112,14 @@ export default async function AlertasPage() {
                   {a.detalhe ? <div className="tiny muted">{String(a.detalhe)}</div> : null}
                   <div className="tiny muted">{String(a.event_type)}</div>
                 </td>
-                <td>
+                <td className="sigilo">
                   {a.cliente_id ? (
                     (nomePorId.get(String(a.cliente_id)) ?? "—")
                   ) : (
                     <span className="muted">—</span>
                   )}
                 </td>
-                <td>{a.valor == null ? "—" : fmt(Number(a.valor))}</td>
+                <td>{a.valor == null ? "—" : <Dinheiro v={Number(a.valor)} />}</td>
                 <td>{String(a.categoria)}</td>
                 <td className="tiny muted">
                   {fmtDate(String(a.criado_em ?? "").slice(0, 10))}

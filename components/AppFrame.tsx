@@ -3,6 +3,7 @@
 import { StoreProvider, useStore } from "@/lib/store";
 import { resumoDeFalhas } from "@/lib/carga";
 import { Sidebar } from "./Sidebar";
+import { TopBar } from "./TopBar";
 import { Spinner } from "./ui";
 
 function Main({ children }: { children: React.ReactNode }) {
@@ -61,7 +62,13 @@ export function AppFrame({
     <StoreProvider>
       <div className="app">
         <Sidebar userEmail={userEmail} />
-        <Main>{children}</Main>
+        {/* `RF-90`: a coluna existe para a topbar ficar parada enquanto o
+            conteúdo rola. Antes `.main` rolava sozinho ao lado da lateral;
+            agora ele rola DENTRO da coluna, abaixo do topo. */}
+        <div className="col">
+          <TopBar />
+          <Main>{children}</Main>
+        </div>
       </div>
     </StoreProvider>
   );

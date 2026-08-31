@@ -1,7 +1,7 @@
 "use client";
 
 import { useStore, useRecursos } from "@/lib/store";
-import { BarrasH, PageHeader, serie } from "@/components/ui";
+import { BarrasH, PageHeader, serie, Dinheiro } from "@/components/ui";
 import { fmt, monthlyValue } from "@/lib/format";
 
 export default function RelatoriosPage() {
@@ -36,7 +36,7 @@ export default function RelatoriosPage() {
   const Linha = ({ label, valor, cor, top }: { label: string; valor: number; cor: string; top?: boolean }) => (
     <tr style={top ? { borderTop: "1px solid var(--linha)" } : {}}>
       <td className="muted" style={{ padding: "7px 0" }}>{label}</td>
-      <td style={{ textAlign: "right", fontWeight: 500, color: cor }}>{fmt(valor)}</td>
+      <td style={{ textAlign: "right", fontWeight: 500, color: cor }}><Dinheiro v={valor} /></td>
     </tr>
   );
 
@@ -58,7 +58,7 @@ export default function RelatoriosPage() {
       <div className="two">
         <div className="card">
           <div className="stitle"><i className="ti ti-users c-orange" />Top clientes por receita</div>
-          <BarrasH itens={topClientes} formatar={fmt} cor={serie(0)}
+          <BarrasH itens={topClientes} formatar={fmt} cor={serie(0)} rotuloSigiloso
             vazio="Nenhuma receita confirmada para ranquear" />
         </div>
         <div className="card">
@@ -69,7 +69,7 @@ export default function RelatoriosPage() {
               <Linha label="Despesas pagas" valor={tP} cor="var(--critico)" />
               <tr style={{ borderTop: "1px solid var(--linha)" }}>
                 <td style={{ padding: "7px 0", fontWeight: 500, color: "var(--marca-tinta)" }}>Lucro líquido</td>
-                <td style={{ textAlign: "right", fontWeight: 500, color: `var(${tR - tP >= 0 ? "--ok" : "--critico"})` }}>{fmt(tR - tP)}</td>
+                <td style={{ textAlign: "right", fontWeight: 500, color: `var(${tR - tP >= 0 ? "--ok" : "--critico"})` }}><Dinheiro v={tR - tP} /></td>
               </tr>
               <tr><td colSpan={2} style={{ padding: 4 }} /></tr>
               <Linha label="Previsão a receber" valor={aR} cor="var(--marca-tinta)" />

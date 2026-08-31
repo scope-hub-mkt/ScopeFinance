@@ -1,6 +1,6 @@
 import { createSupabaseAdmin } from "@/lib/supabase/admin";
-import { Badge, Empty, PageHeader } from "@/components/ui";
-import { fmt, fmtDate } from "@/lib/format";
+import { Badge, Empty, PageHeader, Dinheiro } from "@/components/ui";
+import { fmtDate } from "@/lib/format";
 import { SincronizarCatalogo } from "./SincronizarCatalogo";
 
 export const dynamic = "force-dynamic";
@@ -141,7 +141,7 @@ export default async function ServicosPage() {
                 </td>
                 <td>{(s.area as string) ?? "—"}</td>
                 <td>{(s.recorrencia as string) ?? (s.tipo_cobranca as string) ?? "—"}</td>
-                <td>{s.preco_tabela == null ? "sob consulta" : fmt(Number(s.preco_tabela))}</td>
+                <td>{s.preco_tabela == null ? "sob consulta" : <Dinheiro v={Number(s.preco_tabela)} />}</td>
                 <td>
                   <Badge s={s.ativo ? "ativo" : "inativo"} />
                 </td>

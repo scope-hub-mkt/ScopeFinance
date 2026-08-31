@@ -11,7 +11,8 @@
     "lint": "eslint .",
     "lint:design": "node scripts/lint-design.mjs",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "varredura:privacidade": "node --env-file=.env.local scripts/varredura-privacidade.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

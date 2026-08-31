@@ -2,8 +2,7 @@
 
 import { useState } from "react";
 import { useStore, useRecursos } from "@/lib/store";
-import { Field, Modal, PageHeader } from "@/components/ui";
-import { fmt } from "@/lib/format";
+import { Field, Modal, PageHeader, Dinheiro } from "@/components/ui";
 
 type Form = Record<string, any>;
 
@@ -56,15 +55,15 @@ export default function CartoesPage() {
                 </div>
               </div>
               <div className="row" style={{ fontSize: 12, marginBottom: 5, color: "var(--tinta-2)" }}>
-                <span>Usado: <strong style={{ color: "var(--tinta)" }}>{fmt(us)}</strong></span>
+                <span>Usado: <strong style={{ color: "var(--tinta)" }}><Dinheiro v={us} /></strong></span>
                 <span style={{ fontWeight: 500, color: pct > 80 ? "var(--critico)" : "var(--marca-tinta)" }}>{pct}%</span>
               </div>
               <div className="pbar" style={{ marginBottom: 6 }}>
                 <div className={`pfill ${cl}`} style={{ width: pct + "%" }} />
               </div>
               <div className="row" style={{ fontSize: 11, color: "var(--tinta-3)" }}>
-                <span>Disponível: <strong style={{ color: "var(--ok)" }}>{fmt(lim - us)}</strong></span>
-                <span>Limite: {fmt(lim)}</span>
+                <span>Disponível: <strong style={{ color: "var(--ok)" }}><Dinheiro v={lim - us} /></strong></span>
+                <span>Limite: <Dinheiro v={lim} /></span>
               </div>
             </div>
           );

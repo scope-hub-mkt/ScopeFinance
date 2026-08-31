@@ -2,7 +2,7 @@
 
 Sistema de gestão financeira da **Scope Company** — back-end real (Next.js + Supabase) sobre a identidade visual preto/laranja do protótipo.
 
-Módulos: Dashboard, Clientes, Contratos, **Assinaturas** (recorrência), Contas a receber, Contas a pagar, Lançamentos, Contas bancárias, Cartões, Relatórios (BI) e **Notas Fiscais (NFS-e via Asaas)**.
+Módulos: Dashboard, Clientes, Contratos, **Assinaturas** (recorrência), Contas a receber, Contas a pagar, Contas bancárias, Cartões, Relatórios (BI) e **Notas Fiscais (NFS-e via Asaas)**.
 
 - **Contas a receber** = o que os clientes pagam à Scope (sites, assinaturas, projetos…).
 - **Contas a pagar** = custos da Scope para existir (aluguel, funcionários, ferramentas…).
@@ -113,6 +113,40 @@ conexão** — só uma chamada real distingue "preenchido" de "funciona".
 3. Na Dashboard: **Administração → Integrações** (URL e chave daqui) e
    **Administração → Webhooks de entrada** (conexão de origem `scopefinance`).
 4. Teste pela tela `/integracao` → **Testar conexão** e **Sincronizar agora**.
+
+---
+
+## Modo Corporativo × Modo Privacidade (`RF-90`)
+
+A barra de topo — que **nasceu com esta feature**, em 31/08/2026 — tem um
+interruptor de olho. Ligado, todo valor e toda identidade da tela ficam
+ilegíveis; desligado, o sistema mostra tudo como sempre mostrou.
+
+**Para que serve.** O manager apresenta os painéis em reunião com cliente,
+como prova de competência da equipe. Sem o interruptor, a única saída é não
+mostrar a tela — ou mostrar o faturamento e a carteira inteira para quem
+ainda é prospecto.
+
+⛔ **Não é controle de acesso.** O valor continua no HTML, na resposta da API
+e no DOM: quem abrir o inspetor lê tudo. A ameaça coberta é **olho na sala e
+captura de tela**. Quem pode ver o quê continua sendo decidido no servidor.
+
+| Onde | O quê |
+|---|---|
+| `lib/privacidade.ts` | o contrato: chave, atributo, padrão e o script inline |
+| `app/globals.css` §Modo Privacidade | a regra de máscara — a lista do que borra |
+| `components/TopBar.tsx` | a barra de topo e o interruptor |
+| `components/ui.tsx` → `<Dinheiro>` | **todo dinheiro em JSX passa por aqui** |
+| `tests/privacidade.test.ts` | a guarda que recusa `{fmt(x)}` solto em JSX |
+
+⚠️ **Ao escrever dinheiro numa tela nova, use `<Dinheiro v={x} />`, não
+`{fmt(x)}`.** `fmt()` continua existindo para quem precisa da string (um
+`title`, uma concatenação, um CSV) — mas em JSX ele nasce sem máscara, e a
+bateria de testes recusa. Para identidade (nome, CNPJ, e-mail, telefone) a
+marca é `className="sigilo"` ou `<Sigilo>`.
+
+A decisão completa, com as quatro respostas do dono, está no repositório da
+Dashboard: `docs/DECISIONS.md` §`D-92`.
 
 ---
 
