@@ -77,7 +77,10 @@ export default async function ServicosPage() {
           para o mesmo serviço, e a divergência só apareceria depois de contaminar proposta e
           comissão. Alterações feitas lá chegam aqui em segundos, e a reconciliação diária
           remove o que foi apagado.
-          {/* ⚖️ `RNF-19` / `D-90`: o espelho declara DESDE QUANDO ele é
+          {/* ⚖️ `RNF-19` / `D-90` — design-token-exempt: comentario, nao texto
+              de tela; a regra de emoji nao distingue os dois em JSX, e o
+              proprio `scripts/lint-design.mjs` declara esse limite.
+              O espelho declara DESDE QUANDO ele é
               espelho. Sem esta frase, um espelho parado há dois dias é
               visualmente idêntico a um em dia — foi assim que 7 linhas
               `[DEMO]` passaram por catálogo real entre 28 e 30/08/2026. */}

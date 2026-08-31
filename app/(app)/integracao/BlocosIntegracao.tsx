@@ -133,7 +133,7 @@ export function BlocosIntegracao() {
             A tabela <code>integracao_credenciais</code> ainda não existe aqui, então{" "}
             <strong>Gerenciar</strong> só lê — o valor continua se trocando no ambiente da
             Vercel. Aplique <code>supabase/2026-08-28-credenciais-integracao.sql</code> para
-            liberar a edição pela tela. ⚖️ Dizer isto em voz alta é melhor que oferecer um
+            liberar a edição pela tela. Dizer isto em voz alta é melhor que oferecer um
             botão que finge salvar.
           </p>
         </div>
