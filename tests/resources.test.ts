@@ -67,20 +67,52 @@ describe("colunas deliberadamente NÃO graváveis pela tela", () => {
 });
 
 describe("isResource", () => {
-  it("reconhece as 10 tabelas e recusa o resto", () => {
+  it("reconhece as 11 tabelas e recusa o resto", () => {
     // ♻️ Era 9 até 27/08/2026, quando `retencoes_fiscais` entrou com `RF-60`.
+    // ♻️ E 10 até 31/08/2026, quando `contrato_servicos` entrou com a ligação
+    // 1:N decidida pelo dono — o contrato passou a ter N serviços.
     // ⚖️ O número é a trava: recurso novo é CRUD novo exposto pela API, e
     // subir este contador precisa ser um ato que alguém vê na revisão — nunca
     // um efeito colateral de mexer em `lib/resources.ts`.
-    expect(Object.keys(RESOURCES)).toHaveLength(10);
+    expect(Object.keys(RESOURCES)).toHaveLength(11);
     expect(isResource("clientes")).toBe(true);
     expect(isResource("retencoes_fiscais")).toBe(true);
+    expect(isResource("contrato_servicos")).toBe(true);
     // `integracao` tem rotas ESTÁTICAS que precedem o CRUD genérico; se um dia
     // alguém a tornar recurso, a chave de integração viraria CRUD irrestrito.
     expect(isResource("integracao")).toBe(false);
     expect(isResource("integracao_recebidos")).toBe(false);
     expect(isResource("integracao_enviados")).toBe(false);
     expect(isResource("pg_catalog")).toBe(false);
+  });
+
+  it("⛔ `contratos.servico` NÃO é gravável — virou resumo derivado dos itens", () => {
+    // Desde 31/08/2026 essa coluna é mantida por gatilho a partir de
+    // `contrato_servicos`. Deixá-la gravável faria a tela sobrescrever, com um
+    // texto, o campo que agora responde pelos N serviços — e o resumo voltaria
+    // a discordar dos itens no próximo salvamento, sem erro nenhum.
+    expect(sanitizeInput("contratos", { servico: "Texto à mão", valor: 100 })).toEqual({
+      valor: 100,
+    });
+  });
+
+  it("item de contrato aceita o vínculo com o contrato — sem ele não há como criar", () => {
+    // A regra *"todo serviço tem um contrato"* é garantida pelo `not null` do
+    // banco, não por omitir a coluna aqui.
+    expect(
+      sanitizeInput("contrato_servicos", {
+        contrato_id: "c1",
+        descricao: "Landing Page",
+        quantidade: "2",
+        valor: "1500.5",
+        id: "tentativa-de-forjar-id",
+      })
+    ).toEqual({
+      contrato_id: "c1",
+      descricao: "Landing Page",
+      quantidade: 2,
+      valor: 1500.5,
+    });
   });
 
   it("não é enganado por propriedade herdada de Object", () => {

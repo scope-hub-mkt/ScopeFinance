@@ -32,3 +32,6 @@ yarn-error.log*
 .vscode/*
 !.vscode/extensions.json
 .idea
+
+# Capturas da varredura de privacidade (RF-90) — evidencia local, nao versionada.
+.screenshots/

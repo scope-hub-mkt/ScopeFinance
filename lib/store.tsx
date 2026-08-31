@@ -18,6 +18,7 @@ import type {
   ContaPagar,
   ContaReceber,
   Contrato,
+  ContratoServico,
   Lancamento,
   NotaFiscal,
   RetencaoFiscal,
@@ -26,6 +27,7 @@ import type {
 export interface DB {
   clientes: Cliente[];
   contratos: Contrato[];
+  contrato_servicos: ContratoServico[];
   assinaturas: Assinatura[];
   contas_receber: ContaReceber[];
   contas_pagar: ContaPagar[];
@@ -41,6 +43,7 @@ export type ResourceKey = keyof DB;
 const EMPTY: DB = {
   clientes: [],
   contratos: [],
+  contrato_servicos: [],
   assinaturas: [],
   contas_receber: [],
   contas_pagar: [],
@@ -87,7 +90,16 @@ interface StoreCtx {
   recarregar: () => Promise<void>;
   /** Recursos que não responderam na última carga — degradação, não queda. */
   falhas: Falha[];
-  create: <K extends ResourceKey>(key: K, data: Record<string, unknown>) => Promise<void>;
+  /**
+   * Cria e **devolve a linha gravada** — a API sempre a devolveu; o store é
+   * que a descartava. Quem precisa do `id` recém-gerado (para pendurar filhos
+   * nele, como os serviços de um contrato) não tem outra forma de obtê-lo sem
+   * reler a lista inteira e adivinhar qual é o novo.
+   */
+  create: <K extends ResourceKey>(
+    key: K,
+    data: Record<string, unknown>
+  ) => Promise<Record<string, unknown> | undefined>;
   update: <K extends ResourceKey>(key: K, id: string, data: Record<string, unknown>) => Promise<void>;
   remove: (key: ResourceKey, id: string) => Promise<void>;
   pagar: (opts: {
@@ -273,9 +285,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const create = useCallback<StoreCtx["create"]>(
     async (key, data) => {
       try {
-        await apiFetch(`/api/${key}`, { method: "POST", body: JSON.stringify(data) });
+        const criado = await apiFetch<Record<string, unknown>>(`/api/${key}`, {
+          method: "POST",
+          body: JSON.stringify(data),
+        });
         await refresh(key);
         notify("Registro criado.", "ok");
+        return criado;
       } catch (e) {
         notify(e instanceof Error ? e.message : "Erro ao criar", "err");
         throw e;
@@ -319,7 +335,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       try {
         await apiFetch(`/api/acoes/pagar`, { method: "POST", body: JSON.stringify(opts) });
         await refresh(opts.tabela);
-        await refresh("lancamentos");
+        // A tela de Lançamentos saiu; o que a baixa muda e continua na tela é o saldo.
         await refresh("bancos");
         notify("Baixa registrada.", "ok");
       } catch (e) {

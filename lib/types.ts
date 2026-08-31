@@ -42,14 +42,63 @@ export interface Cartao {
 
 export interface Contrato {
   id: string;
-  cliente_id: string | null;
+  /**
+   * ⚖️ **Nunca nulo desde 31/08/2026** — *"cada contrato deve ter um
+   * cliente"*. O `not null` está no banco; o tipo aqui apenas para de mentir
+   * sobre o que o banco garante.
+   */
+  cliente_id: string;
+  /**
+   * ⛔ **DERIVADO — não escreva.** Resumo dos itens de `contrato_servicos`,
+   * mantido por gatilho no Postgres desde 31/08/2026. A fonte do que foi
+   * contratado é a lista de itens; esta coluna existe para que quem só quer
+   * uma linha de texto (a ponte, um relatório) continue tendo uma que
+   * corresponde à verdade.
+   */
   servico: string;
+  /**
+   * O valor **acordado** do contrato — é dele que a cobrança sai.
+   *
+   * ⚠️ Não é a soma dos itens, e pode divergir dela. A divergência é
+   * declarada na tela (`vw_contrato_servicos_totais`), nunca corrigida por
+   * conta própria: mexer em dinheiro já contratado é o que `RN-01` proíbe.
+   */
   valor: number;
   freq: string;
   categoria: string | null;
   inicio: string | null;
   fim: string | null;
   status: string;
+  obs: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Um serviço dentro de um contrato — a ligação `1:N` decidida pelo dono em
+ * 31/08/2026.
+ *
+ * ⚖️ *"um contrato pode ter N serviços e um serviço deve possuir um
+ * contrato"*. O `contrato_id` obrigatório é essa segunda metade: item não
+ * existe solto, e a exclusão do contrato leva os itens junto (`cascade`).
+ */
+export interface ContratoServico {
+  id: string;
+  contrato_id: string;
+  /**
+   * O item do catálogo (`servicos_espelho`), quando existe um que corresponda.
+   *
+   * ⛔ Nulo é caso legítimo, não pendência: escopo fechado sob medida é
+   * faturável e não é item de catálogo. A tela mostra quantos itens estão sem
+   * vínculo para que a escolha seja de quem vendeu, não do código.
+   */
+  servico_id: string | null;
+  /** O nome como estava **na venda** — renomear o catálogo não reescreve isto. */
+  descricao: string;
+  quantidade: number;
+  valor: number;
+  /** Nulo = herda a frequência do contrato. */
+  recorrencia: string | null;
   obs: string | null;
   created_at: string;
   updated_at: string;

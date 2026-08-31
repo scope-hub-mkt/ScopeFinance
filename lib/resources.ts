@@ -7,6 +7,7 @@ export type ResourceName =
   | "bancos"
   | "cartoes"
   | "contratos"
+  | "contrato_servicos"
   | "assinaturas"
   | "contas_receber"
   | "contas_pagar"
@@ -48,11 +49,28 @@ export const RESOURCES: Record<ResourceName, ResourceConfig> = {
     integer: ["fechamento", "vencimento"],
   },
   contratos: {
-    columns: ["cliente_id", "servico", "valor", "freq", "categoria", "inicio", "fim", "status", "obs"],
+    // ⛔ `servico` saiu das colunas graváveis em 31/08/2026, quando o contrato
+    // passou a ter N serviços. Ele virou **resumo derivado** dos itens de
+    // `contrato_servicos`, mantido por gatilho no banco — deixá-lo gravável
+    // faria a tela reescrever, com um texto, o campo que agora responde pelos
+    // itens. A escrita acontece em `contrato_servicos`, e o resumo segue.
+    columns: ["cliente_id", "valor", "freq", "categoria", "inicio", "fim", "status", "obs"],
     orderBy: "created_at",
     ascending: false,
     numeric: ["valor"],
     integer: [],
+  },
+  // Os itens do contrato — `1:N`, decisão do dono de 31/08/2026.
+  //
+  // ⛔ `contrato_id` É gravável, ao contrário do que a intuição sugere: sem
+  // ele não há como criar um item, e a regra *"todo serviço tem um contrato"*
+  // é garantida pelo `not null` do banco, não por omitir a coluna aqui.
+  contrato_servicos: {
+    columns: ["contrato_id", "servico_id", "descricao", "quantidade", "valor", "recorrencia", "obs"],
+    orderBy: "created_at",
+    ascending: true,
+    numeric: ["valor"],
+    integer: ["quantidade"],
   },
   assinaturas: {
     columns: [

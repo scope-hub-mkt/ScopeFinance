@@ -389,16 +389,57 @@ export function interpretarEvento(env: Envelope): ResultadoEvento {
 // ("Parcela 10 de 10."), e o nome do serviço não sobrevive à cobrança. O que a
 // Dashboard precisa é do **compromisso**, não do lançamento dele.
 
-/** Um compromisso de receita ativo — contrato ou assinatura, achatados. */
+/** Um compromisso de receita ativo — item de contrato ou assinatura, achatados. */
 export interface ServicoContratadoContrato {
-  /** Id da linha de origem. É a chave de idempotência do outro lado. */
+  /**
+   * Id da linha de origem. É a chave de idempotência do outro lado.
+   *
+   * ♻️ **Passou a ser o id do ITEM em 31/08/2026**, quando o contrato ganhou N
+   * serviços. Era o id do contrato — e continuar assim faria os N itens de um
+   * contrato chegarem lá com a mesma referência, indistinguíveis.
+   *
+   * ⛔ A troca **não duplica nada** do outro lado: a reconciliação da Dashboard
+   * casa por `(cliente, serviço)` e usa `origem_referencia` apenas para gravar
+   * a procedência. Conferido em `lib/dominio/servicos-contratados.ts` de lá
+   * ANTES de mudar — o que ela faz ao ver referência nova é atualizar a linha
+   * existente, não criar outra.
+   */
   referencia: string;
   origem: "contrato" | "assinatura";
   cliente_id: string;
   /**
-   * O texto que descreve o serviço — **livre, e é esse o ponto**. Nem
-   * `contratos.servico` nem `assinaturas.descricao` têm `servico_id`: o
-   * vínculo com o catálogo é decisão da Dashboard, que é a dona dele.
+   * O contrato a que este serviço pertence. **Nunca nulo quando
+   * `origem = "contrato"`** — é a regra do dono, *"um serviço deve possuir um
+   * contrato"*, atravessando a ponte.
+   *
+   * Assinatura vem nula: ela não está dentro de um contrato, ela É o
+   * compromisso.
+   */
+  contrato_id: string | null;
+  /**
+   * Como chamar esse contrato na tela do outro lado, onde não existe tabela de
+   * contratos. Resumo dos itens + período — o suficiente para agrupar e
+   * reconhecer, sem obrigar a Dashboard a espelhar mais uma tabela.
+   */
+  contrato_rotulo: string | null;
+  /**
+   * O item do catálogo, **quando quem vendeu já disse qual é**.
+   *
+   * ⚖️ Isto é o que a ligação `1:N` comprou de verdade. Até 31/08/2026 o
+   * rótulo viajava como texto puro e a Dashboard adivinhava o serviço por
+   * casamento de substring (`servico_mapa_finance`) — um mapa que o dono
+   * mantém à mão e que **cala sobre todo rótulo novo** até alguém cadastrá-lo.
+   * Com o item apontando para `servicos_espelho`, cujo `id` é o MESMO do
+   * catálogo dela, não há o que adivinhar.
+   *
+   * ⛔ Nulo continua sendo caso normal — item sob medida não é catálogo, e o
+   * mapa de rótulos segue valendo como plano B.
+   */
+  servico_id: string | null;
+  /**
+   * O texto que descreve o serviço. Para item de contrato é a `descricao`
+   * dele; para assinatura, a descrição ou o plano. Continua livre, e continua
+   * sendo o que o mapa de rótulos consome quando `servico_id` vem nulo.
    */
   rotulo: string;
   plano: string | null;
@@ -417,6 +458,7 @@ export interface ServicoContratadoContrato {
 export interface LinhaContrato {
   id: string;
   cliente_id: string | null;
+  /** ⛔ Resumo DERIVADO dos itens. Vira rótulo do contrato, nunca serviço. */
   servico: string | null;
   valor: number | string | null;
   freq: string | null;
@@ -424,6 +466,21 @@ export interface LinhaContrato {
   inicio: string | null;
   fim: string | null;
   status: string | null;
+}
+
+/**
+ * Um item de `contrato_servicos` — a linha que passou a atravessar a ponte em
+ * 31/08/2026. Antes, o que atravessava era o contrato inteiro, e um contrato
+ * com dois serviços chegava do outro lado como um serviço só.
+ */
+export interface LinhaContratoServico {
+  id: string;
+  contrato_id: string;
+  servico_id: string | null;
+  descricao: string | null;
+  quantidade: number | string | null;
+  valor: number | string | null;
+  recorrencia: string | null;
 }
 
 export interface LinhaAssinaturaContratada {
@@ -462,32 +519,79 @@ const vivo = (status: string | null | undefined): boolean =>
  * ⛔ **Linha sem `cliente_id` é descartada.** Sem cliente não há o que vincular,
  * e inventar um destino é pior que omitir a linha.
  */
+/**
+ * O rótulo com que a Dashboard reconhece um contrato numa lista.
+ *
+ * Só o resumo dos serviços não basta quando o mesmo cliente renova o mesmo
+ * escopo todo ano — dois contratos com rótulo idêntico e nada que os separe.
+ * O ano de início desempata, e é a informação que quem olha usa de qualquer
+ * forma.
+ */
+export function rotuloDoContrato(c: Pick<LinhaContrato, "servico" | "inicio">): string {
+  const base = String(c.servico ?? "").trim() || "Contrato sem serviços";
+  const ano = String(c.inicio ?? "").slice(0, 4);
+  return ano ? `${base} (${ano})` : base;
+}
+
 export function servicosContratadosParaContrato(
   contratos: LinhaContrato[],
-  assinaturas: LinhaAssinaturaContratada[]
+  assinaturas: LinhaAssinaturaContratada[],
+  itens: LinhaContratoServico[] = []
 ): ServicoContratadoContrato[] {
   const saida: ServicoContratadoContrato[] = [];
 
+  const porContrato = new Map<string, LinhaContratoServico[]>();
+  for (const i of itens) {
+    porContrato.set(i.contrato_id, [...(porContrato.get(i.contrato_id) ?? []), i]);
+  }
+
   for (const c of contratos) {
     if (!c.cliente_id) continue;
-    const rotulo = String(c.servico ?? "").trim();
-    if (!rotulo) continue;
-    saida.push({
-      referencia: c.id,
-      origem: "contrato",
-      cliente_id: c.cliente_id,
-      rotulo,
-      // `categoria` entra como plano porque é o que mais se aproxima: é a
-      // qualificação do contrato, não um segundo serviço.
-      plano: c.categoria ? String(c.categoria) : null,
-      valor: c.valor === null || c.valor === undefined ? null : reais(cents(c.valor)),
-      recorrencia: c.freq ?? null,
-      inicio: c.inicio ?? null,
-      fim: c.fim ?? null,
-      status: String(c.status ?? ""),
-      ativo: vivo(c.status),
-      fonte: FONTE,
-    });
+    const rotuloContrato = rotuloDoContrato(c);
+    const meus = porContrato.get(c.id) ?? [];
+
+    // ⛔ **Contrato sem item não vira uma linha "vazia".** Antes de 31/08/2026
+    // o contrato era a linha, e o rótulo dela era `contratos.servico`. Agora a
+    // linha é o item — e um contrato que perdeu todos os itens não tem serviço
+    // nenhum para declarar. Emitir o resumo derivado (que nesse caso é string
+    // vazia) faria a Dashboard receber um compromisso sem nome.
+    //
+    // ⚖️ Ele some da ponte, e é o certo: some da ponte significa que a
+    // reconciliação do outro lado o ENCERRA, com motivo. É o mesmo caminho de
+    // um contrato cancelado — e um contrato sem serviços é, comercialmente,
+    // exatamente isso.
+    for (const it of meus) {
+      const rotulo = String(it.descricao ?? "").trim();
+      if (!rotulo) continue;
+      const qtd = Number(it.quantidade ?? 1) || 1;
+      saida.push({
+        // O ITEM é a referência agora — ver o comentário do campo.
+        referencia: it.id,
+        origem: "contrato",
+        cliente_id: c.cliente_id,
+        contrato_id: c.id,
+        contrato_rotulo: rotuloContrato,
+        // O vínculo com o catálogo quando quem vendeu já o escolheu. É o que
+        // dispensa o palpite por substring do outro lado.
+        servico_id: it.servico_id ?? null,
+        rotulo,
+        // `categoria` entra como plano porque é o que mais se aproxima: é a
+        // qualificação do contrato, não um segundo serviço.
+        plano: c.categoria ? String(c.categoria) : null,
+        // ⚠️ O valor do ITEM, multiplicado pela quantidade — não o do
+        // contrato. Repetir o total do contrato em cada item faria um contrato
+        // de dois serviços parecer o dobro do que é, do outro lado.
+        valor: it.valor === null || it.valor === undefined ? null : reais(cents(it.valor) * qtd),
+        // Item sem recorrência própria herda a do contrato — que é o que
+        // `null` significa na coluna.
+        recorrencia: it.recorrencia ?? c.freq ?? null,
+        inicio: c.inicio ?? null,
+        fim: c.fim ?? null,
+        status: String(c.status ?? ""),
+        ativo: vivo(c.status),
+        fonte: FONTE,
+      });
+    }
   }
 
   for (const a of assinaturas) {
@@ -499,6 +603,12 @@ export function servicosContratadosParaContrato(
       referencia: a.id,
       origem: "assinatura",
       cliente_id: a.cliente_id,
+      // Assinatura não vive dentro de um contrato — ela é o compromisso.
+      contrato_id: null,
+      contrato_rotulo: null,
+      // Assinatura ainda não tem vínculo de catálogo deste lado; o mapa de
+      // rótulos da Dashboard continua respondendo por ela.
+      servico_id: null,
       rotulo,
       plano: a.plano ? String(a.plano) : null,
       valor: a.valor === null || a.valor === undefined ? null : reais(cents(a.valor)),

@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   baseLiquida,
   servicosContratadosParaContrato,
+  rotuloDoContrato,
   type LinhaAssinaturaContratada,
   type LinhaContrato,
+  type LinhaContratoServico,
   calcularMrr,
   calcularResumo,
   calcularSerie,
@@ -378,15 +380,32 @@ describe("servicosContratadosParaContrato — a perna que faltava na ponte", () 
     ...over,
   });
 
+  const item = (over: Partial<LinhaContratoServico> = {}): LinhaContratoServico => ({
+    id: "i1",
+    contrato_id: "c1",
+    servico_id: null,
+    descricao: "WebDesign - Manutenção Recorrente",
+    quantidade: 1,
+    valor: 850,
+    recorrencia: null,
+    ...over,
+  });
+
   it("achata contrato e assinatura no mesmo formato, com a fonte declarada", () => {
-    const r = servicosContratadosParaContrato([contrato()], [assinatura()]);
+    const r = servicosContratadosParaContrato([contrato()], [assinatura()], [item()]);
     expect(r).toHaveLength(2);
     expect(r[0]).toMatchObject({
-      referencia: "c1",
+      // ♻️ A referência é do ITEM desde 31/08/2026 — era do contrato. Com N
+      // itens por contrato, a referência do contrato chegaria repetida, e a
+      // reconciliação do outro lado não teria como distinguir um serviço do
+      // outro.
+      referencia: "i1",
       origem: "contrato",
       cliente_id: "cli-1",
+      contrato_id: "c1",
       rotulo: "WebDesign - Manutenção Recorrente",
       valor: 850,
+      // Item sem recorrência própria herda a do contrato.
       recorrencia: "Mensal",
       ativo: true,
       fonte: "scopefinance",
@@ -409,10 +428,11 @@ describe("servicosContratadosParaContrato — a perna que faltava na ponte", () 
     expect(r).toEqual([]);
   });
 
-  it("descarta linha sem cliente e linha sem rótulo — não há o que vincular", () => {
+  it("descarta linha sem cliente e item sem descrição — não há o que vincular", () => {
     const r = servicosContratadosParaContrato(
-      [contrato({ cliente_id: null }), contrato({ id: "c2", servico: "   " })],
-      [assinatura({ id: "a2", descricao: null, plano: null })]
+      [contrato({ cliente_id: null }), contrato({ id: "c2" })],
+      [assinatura({ id: "a2", descricao: null, plano: null })],
+      [item(), item({ id: "i2", contrato_id: "c2", descricao: "   " })]
     );
     expect(r).toEqual([]);
   });
@@ -425,19 +445,178 @@ describe("servicosContratadosParaContrato — a perna que faltava na ponte", () 
   it("`Pausado` atravessa com ativo=false — suspenso não é upsell, e some é pior", () => {
     const r = servicosContratadosParaContrato(
       [contrato({ status: "Pausado" })],
-      [assinatura({ status: "Cancelada" })]
+      [assinatura({ status: "Cancelada" })],
+      [item()]
     );
     expect(r.map((l) => l.ativo)).toEqual([false, false]);
     expect(r).toHaveLength(2);
   });
 
   it("arredonda o valor em centavos — 0.1+0.2 não é 0.3, e o resíduo atravessa a ponte", () => {
-    const r = servicosContratadosParaContrato([contrato({ valor: "1700.005" })], []);
+    const r = servicosContratadosParaContrato([contrato()], [], [item({ valor: "1700.005" })]);
     expect(r[0].valor).toBe(1700.01);
   });
 
   it("valor ausente vira null, nunca zero — zero afirmaria que é de graça", () => {
-    const r = servicosContratadosParaContrato([contrato({ valor: null })], []);
+    const r = servicosContratadosParaContrato([contrato()], [], [item({ valor: null })]);
     expect(r[0].valor).toBeNull();
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════
+//  A ligação 1:N — decisão do dono, 31/08/2026
+//
+//  *"um contrato pode ter N serviços e um serviço deve possuir um contrato"*.
+//
+//  O que estes testes protegem é a metade que não aparece na tela: o formato
+//  que ATRAVESSA a ponte. Um contrato de dois serviços que chega do outro lado
+//  como um só não levanta erro nenhum — some um serviço, e o relatório de lá
+//  fica silenciosamente menor.
+// ════════════════════════════════════════════════════════════════════
+describe("contrato 1:N — um contrato, N serviços atravessando a ponte", () => {
+  const contrato = (over: Partial<LinhaContrato> = {}): LinhaContrato => ({
+    id: "c1",
+    cliente_id: "cli-1",
+    servico: "Landing Page + Automação",
+    valor: 5000,
+    freq: "Mensal",
+    categoria: "WebDesign",
+    inicio: "2026-03-01",
+    fim: null,
+    status: "Ativo",
+    ...over,
+  });
+
+  const item = (over: Partial<LinhaContratoServico> = {}): LinhaContratoServico => ({
+    id: "i1",
+    contrato_id: "c1",
+    servico_id: null,
+    descricao: "Landing Page",
+    quantidade: 1,
+    valor: 2000,
+    recorrencia: null,
+    ...over,
+  });
+
+  it("um contrato com dois serviços vira DUAS linhas, não uma", () => {
+    const r = servicosContratadosParaContrato(
+      [contrato()],
+      [],
+      [item(), item({ id: "i2", descricao: "Automação", valor: 3000 })]
+    );
+    expect(r).toHaveLength(2);
+    expect(r.map((l) => l.rotulo)).toEqual(["Landing Page", "Automação"]);
+    // Cada linha tem a SUA referência: é o que impede a reconciliação do outro
+    // lado de tratar as duas como o mesmo compromisso.
+    expect(new Set(r.map((l) => l.referencia)).size).toBe(2);
+  });
+
+  it("cada linha carrega o contrato de origem — a metade 'serviço tem contrato'", () => {
+    const r = servicosContratadosParaContrato([contrato()], [], [item()]);
+    expect(r[0].contrato_id).toBe("c1");
+    expect(r[0].contrato_rotulo).toBe("Landing Page + Automação (2026)");
+  });
+
+  it("assinatura vem sem contrato — ela não está dentro de um, ela É o compromisso", () => {
+    const r = servicosContratadosParaContrato(
+      [],
+      [
+        {
+          id: "a1",
+          direcao: "receber",
+          cliente_id: "cli-2",
+          descricao: "Assinatura do CRM",
+          plano: "Pro",
+          valor: 399,
+          ciclo: "mensal",
+          inicio: "2026-02-01",
+          fim: null,
+          status: "Ativa",
+        },
+      ]
+    );
+    expect(r[0].contrato_id).toBeNull();
+    expect(r[0].contrato_rotulo).toBeNull();
+  });
+
+  it("contrato SEM item não emite linha — não há serviço para declarar", () => {
+    // E é o certo: sumir da ponte significa que a reconciliação do outro lado
+    // o encerra, com motivo. Um contrato sem serviços é, comercialmente, isso.
+    const r = servicosContratadosParaContrato([contrato()], [], []);
+    expect(r).toEqual([]);
+  });
+
+  it("leva o servico_id quando quem vendeu já escolheu o item do catálogo", () => {
+    // É o que dispensa o palpite por substring do outro lado.
+    const r = servicosContratadosParaContrato(
+      [contrato()],
+      [],
+      [item({ servico_id: "cat-landing" })]
+    );
+    expect(r[0].servico_id).toBe("cat-landing");
+  });
+
+  it("sem vínculo de catálogo, servico_id é null e o rótulo segue valendo", () => {
+    const r = servicosContratadosParaContrato([contrato()], [], [item()]);
+    expect(r[0].servico_id).toBeNull();
+    expect(r[0].rotulo).toBe("Landing Page");
+  });
+
+  it("quantidade multiplica o valor do item — 3 × 500 são 1500, não 500", () => {
+    const r = servicosContratadosParaContrato(
+      [contrato()],
+      [],
+      [item({ quantidade: 3, valor: 500 })]
+    );
+    expect(r[0].valor).toBe(1500);
+  });
+
+  it("manda o valor do ITEM, nunca o do contrato — senão dois itens viram o dobro", () => {
+    const r = servicosContratadosParaContrato(
+      [contrato({ valor: 5000 })],
+      [],
+      [item({ valor: 2000 }), item({ id: "i2", descricao: "Automação", valor: 3000 })]
+    );
+    expect(r.map((l) => l.valor)).toEqual([2000, 3000]);
+    expect(r.reduce((s, l) => s + (l.valor ?? 0), 0)).toBe(5000);
+  });
+
+  it("item com recorrência própria não herda a do contrato", () => {
+    const r = servicosContratadosParaContrato(
+      [contrato({ freq: "Mensal" })],
+      [],
+      [item({ recorrencia: "Único" }), item({ id: "i2", descricao: "Manutenção" })]
+    );
+    expect(r.map((l) => l.recorrencia)).toEqual(["Único", "Mensal"]);
+  });
+
+  it("item de contrato que não está na lista é ignorado — não inventa dono", () => {
+    const r = servicosContratadosParaContrato(
+      [contrato()],
+      [],
+      [item(), item({ id: "i9", contrato_id: "c-fantasma", descricao: "Órfão" })]
+    );
+    expect(r).toHaveLength(1);
+    expect(r[0].rotulo).toBe("Landing Page");
+  });
+});
+
+describe("rotuloDoContrato — como a Dashboard reconhece um contrato sem espelhá-lo", () => {
+  it("junta o resumo dos serviços com o ano de início", () => {
+    expect(rotuloDoContrato({ servico: "Landing Page + Automação", inicio: "2026-03-01" })).toBe(
+      "Landing Page + Automação (2026)"
+    );
+  });
+
+  it("sem início, fica só o resumo — não inventa ano", () => {
+    expect(rotuloDoContrato({ servico: "Landing Page", inicio: null })).toBe("Landing Page");
+  });
+
+  it("contrato que perdeu os serviços tem nome, em vez de vazio", () => {
+    // Rótulo vazio na tela do outro lado seria uma linha em branco que ninguém
+    // sabe clicar. Dizer o que houve é mais barato que esconder.
+    expect(rotuloDoContrato({ servico: "", inicio: "2026-01-01" })).toBe(
+      "Contrato sem serviços (2026)"
+    );
   });
 });
