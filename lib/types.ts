@@ -28,18 +28,6 @@ export interface Banco {
   updated_at: string;
 }
 
-export interface Cartao {
-  id: string;
-  nome: string;
-  bandeira: string | null;
-  limite: number;
-  usado: number;
-  fechamento: number | null;
-  vencimento: number | null;
-  created_at: string;
-  updated_at: string;
-}
-
 export interface Contrato {
   id: string;
   /**

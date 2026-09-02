@@ -30,9 +30,6 @@ export const NAV: { g: string; items: { href: string; icon: string; l: string }[
     items: [
       { href: "/clientes", icon: "ti-users", l: "Clientes" },
       { href: "/servicos", icon: "ti-package", l: "Serviços" },
-      // A fila do §2.3/§2.4. Fica em Cadastros porque é cadastro pela metade —
-      // e porque esconder o que bloqueia cobrança é o defeito que ela corrige.
-      { href: "/revisao", icon: "ti-alert-circle", l: "Em revisão" },
     ],
   },
   {
@@ -65,7 +62,6 @@ export const NAV: { g: string; items: { href: string; icon: string; l: string }[
     g: "Fiscal",
     items: [
       { href: "/notas-fiscais", icon: "ti-receipt", l: "Notas fiscais" },
-      { href: "/fiscal", icon: "ti-percentage", l: "Retenções" },
     ],
   },
   {

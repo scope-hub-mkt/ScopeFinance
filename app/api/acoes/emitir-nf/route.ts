@@ -9,7 +9,6 @@ import {
   createCustomer,
   createInvoice,
   defaultMunicipalServiceCode,
-  defaultTaxes,
   type AsaasInvoiceTaxes,
 } from "@/lib/asaas";
 import {

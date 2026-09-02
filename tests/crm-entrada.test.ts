@@ -15,7 +15,7 @@ vi.mock("@/lib/supabase/admin", async () => {
   return { createSupabaseAdmin: () => f() };
 });
 
-const { aplicarEventoCrm, clientesEmRevisao } = await import("@/lib/crm/aplicar");
+const { aplicarEventoCrm } = await import("@/lib/crm/aplicar");
 
 /**
  * Os cenários do §10.1 do `03-PLANO-DE-IMPLEMENTACAO.md`, literais.
@@ -203,7 +203,7 @@ describe("Cenário: card entra em Validação Contratual com documento", () => {
 });
 
 describe("Cenário: card entra sem documento", () => {
-  it("cria PROVISÓRIO e ele aparece na fila", async () => {
+  it("cria PROVISÓRIO, sem documento", async () => {
     const p = payload({ documento: null, empresa: {} });
     if (!p.ok) throw new Error("payload");
     const r = await aplicarEventoCrm(fakeAtual() as never, p.payload, {});
@@ -211,12 +211,13 @@ describe("Cenário: card entra sem documento", () => {
     if (r.estado !== "aplicado") return;
     expect(r.status_cadastro).toBe("provisorio");
 
-    const fila = await clientesEmRevisao(fakeAtual() as never, "provisorio");
-    expect(fila).toHaveLength(1);
-    expect(fila[0].documento_principal ?? null).toBeNull();
-    // ⛔ É a fila que torna "provisório" mais que um rótulo: sem ela, o estado
-    // que bloqueia cobrança e nota fiscal seria invisível.
-    expect(fila[0].dias_esperando).toBe(0);
+    // ⛔ O que mantém "provisório" mais que um rótulo é a RECUSA em
+    // `app/api/[resource]/route.ts`: ele bloqueia cobrança e nota fiscal para
+    // quem não tem documento. A fila que listava esses cadastros numa tela
+    // própria foi removida em 02/09/2026; o bloqueio, não.
+    const c = fakeAtual().tabela("clientes")[0];
+    expect(c.status_cadastro).toBe("provisorio");
+    expect(c.documento_principal ?? null).toBeNull();
   });
 });
 
@@ -344,40 +345,5 @@ describe("§2.3 — o que 'provisório' PROÍBE, e por que isso não é rótulo"
     expect(c.status_cadastro).toBe("provisorio");
     expect(c.cnpj).toBeUndefined();
     expect(c.cpf).toBeUndefined();
-  });
-
-  it("a fila devolve provisórios e conflitos, e ordena pelo mais antigo", async () => {
-    const velho = new Date(Date.now() - 5 * 86_400_000).toISOString();
-    banco([
-      cliente({ id: "a", nome: "Antigo", status_cadastro: "provisorio", created_at: velho }),
-      cliente({
-        id: "b",
-        nome: "Recente",
-        documento_principal: "99999999000199",
-        status_cadastro: "em_conflito",
-      }),
-      cliente({ id: "c", nome: "Normal", documento_principal: "88888888000188" }),
-    ]);
-
-    const fila = await clientesEmRevisao(fakeAtual() as never);
-    expect(fila.map((f) => f.nome)).toEqual(["Antigo", "Recente"]);
-    // ⛔ Quem já tem identidade conferida não aparece na fila.
-    expect(fila.some((f) => f.nome === "Normal")).toBe(false);
-    // Dias esperando é o que transforma a lista em urgência visível.
-    expect(fila[0].dias_esperando).toBe(5);
-  });
-
-  it("filtra por estado quando pedido", async () => {
-    banco([
-      cliente({ id: "a", nome: "Prov", status_cadastro: "provisorio" }),
-      cliente({
-        id: "b",
-        nome: "Confl",
-        documento_principal: "99999999000199",
-        status_cadastro: "em_conflito",
-      }),
-    ]);
-    expect((await clientesEmRevisao(fakeAtual() as never, "provisorio")).map((f) => f.nome)).toEqual(["Prov"]);
-    expect((await clientesEmRevisao(fakeAtual() as never, "em_conflito")).map((f) => f.nome)).toEqual(["Confl"]);
   });
 });

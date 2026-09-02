@@ -31,7 +31,7 @@ describe("sanitizeInput", () => {
   });
 
   it("inteiro inválido vira null", () => {
-    expect(sanitizeInput("cartoes", { fechamento: "xx" })).toEqual({ fechamento: null });
+    expect(sanitizeInput("assinaturas", { dia_venc: "xx" })).toEqual({ dia_venc: null });
   });
 
   it("valor_pago e deducoes são graváveis e numéricos — a base da comissão", () => {
@@ -67,14 +67,16 @@ describe("colunas deliberadamente NÃO graváveis pela tela", () => {
 });
 
 describe("isResource", () => {
-  it("reconhece as 11 tabelas e recusa o resto", () => {
+  it("reconhece as 10 tabelas e recusa o resto", () => {
     // ♻️ Era 9 até 27/08/2026, quando `retencoes_fiscais` entrou com `RF-60`.
     // ♻️ E 10 até 31/08/2026, quando `contrato_servicos` entrou com a ligação
     // 1:N decidida pelo dono — o contrato passou a ter N serviços.
-    // ⚖️ O número é a trava: recurso novo é CRUD novo exposto pela API, e
-    // subir este contador precisa ser um ato que alguém vê na revisão — nunca
-    // um efeito colateral de mexer em `lib/resources.ts`.
-    expect(Object.keys(RESOURCES)).toHaveLength(11);
+    // ♻️ Voltou a 10 em 02/09/2026, quando `cartoes` SAIU: a tela passou a ler
+    // os cartões que pagaram, do Asaas, e a tabela (vazia desde sempre) foi
+    // derrubada. ⚖️ O contador vale nos DOIS sentidos — recurso que some
+    // também é superfície de API que muda, e some com alguém olhando.
+    expect(Object.keys(RESOURCES)).toHaveLength(10);
+    expect(isResource("cartoes")).toBe(false);
     expect(isResource("clientes")).toBe(true);
     expect(isResource("retencoes_fiscais")).toBe(true);
     expect(isResource("contrato_servicos")).toBe(true);

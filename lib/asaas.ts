@@ -162,10 +162,6 @@ export function authorizeInvoice(id: string): Promise<AsaasInvoice> {
   return asaasRequest<AsaasInvoice>(`/invoices/${id}/authorize`, "POST");
 }
 
-export function getInvoice(id: string): Promise<AsaasInvoice> {
-  return asaasRequest<AsaasInvoice>(`/invoices/${id}`, "GET");
-}
-
 /**
  * Defaults de tributos vindos do ambiente.
  *

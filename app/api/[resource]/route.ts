@@ -38,12 +38,16 @@ async function bloqueadoPorCadastroProvisorio(
   const alvo = data as { nome: string; status_cadastro: string } | null;
   if (!alvo || alvo.status_cadastro === "efetivo") return null;
 
+  // ⚠️ A mensagem aponta para **Clientes**, e não mais para uma fila própria:
+  // a tela "Em revisão" foi removida em 02/09/2026. Uma recusa que manda a
+  // pessoa a uma tela inexistente é pior que uma recusa seca — ela bloqueia e
+  // ainda dá o caminho errado para desbloquear.
   return alvo.status_cadastro === "em_conflito"
     ? `"${alvo.nome}" está EM CONFLITO: o documento dele pertence a outro cadastro. ` +
-        `Resolva em Cadastros → Em revisão antes de cobrar — cobrar agora emitiria nota ` +
+        `Resolva o cadastro em Clientes antes de cobrar — cobrar agora emitiria nota ` +
         `contra uma identidade que ninguém confirmou, e isso não se desfaz.`
     : `"${alvo.nome}" é um cadastro PROVISÓRIO: falta o CPF/CNPJ. ` +
-        `Complete o documento em Cadastros → Em revisão antes de gerar cobrança — ` +
+        `Complete o documento em Clientes antes de gerar cobrança — ` +
         `a nota fiscal é emitida contra o documento, e emiti-la errada é irreversível.`;
 }
 

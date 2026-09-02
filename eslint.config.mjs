@@ -57,6 +57,20 @@ const config = [
        * continuar visível sem travar o build.
        */
       "@typescript-eslint/no-explicit-any": "warn",
+
+      /**
+       * `_` no começo do nome significa **"não uso, e é de propósito"** — o
+       * caso são parâmetros posicionais de stub (`(_url, _init) => …`), que
+       * não podem sumir sem quebrar a assinatura.
+       *
+       * ⛔ Sem esta linha, a regra acusava dois falsos positivos permanentes.
+       * Aviso que nunca vai ser resolvido é pior que aviso nenhum: ele treina
+       * quem lê a saída do lint a ignorar a saída do lint.
+       */
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" },
+      ],
     },
   },
 ];

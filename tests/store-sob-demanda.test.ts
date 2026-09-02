@@ -75,7 +75,13 @@ describe("toda tela que lê `db` declara o que precisa", () => {
   const telas = telasQueLeemDb();
 
   it("há telas para conferir — senão este teste passa vazio", () => {
-    expect(telas.length).toBeGreaterThanOrEqual(10);
+    // ♻️ Era 10 até 02/09/2026, quando `/cartoes` deixou de ler `db`: os
+    // cartões passaram a ser lidos do Asaas por Server Component, e a tabela
+    // `cartoes` (vazia desde sempre) foi derrubada. ⚖️ O piso continua sendo
+    // um sentinela contra a guarda vazia — ele desce quando uma tela sai do
+    // navegador, que é a direção certa, e nunca por uma tela ter esquecido
+    // de declarar o que lê.
+    expect(telas.length).toBeGreaterThanOrEqual(9);
   });
 
   it("⛔ nenhuma lê `db` sem chamar `useRecursos`", () => {

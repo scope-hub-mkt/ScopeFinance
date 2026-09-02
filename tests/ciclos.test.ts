@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { BancoFake } from "./fakes/supabase-fake";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { gerarRecorrencias } from "@/lib/recorrencia";

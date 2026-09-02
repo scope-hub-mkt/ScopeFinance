@@ -100,10 +100,10 @@ const CFG = {
     tabelaClientes: "clientes",
     colunaNome: "nome",
     rotas: [
-      "/", "/relatorios", "/clientes", "/servicos", "/revisao",
+      "/", "/relatorios", "/clientes", "/servicos",
       "/vendas", "/vendas/avulsas", "/contratos", "/assinaturas",
       "/receber", "/pagar", "/bancos", "/cartoes",
-      "/notas-fiscais", "/fiscal", "/integracao", "/alertas",
+      "/notas-fiscais", "/integracao", "/alertas",
     ],
   },
 }[SISTEMA];

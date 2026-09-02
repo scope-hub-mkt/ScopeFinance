@@ -5,7 +5,6 @@
 export type ResourceName =
   | "clientes"
   | "bancos"
-  | "cartoes"
   | "contratos"
   | "contrato_servicos"
   | "assinaturas"
@@ -35,18 +34,17 @@ export const RESOURCES: Record<ResourceName, ResourceConfig> = {
     integer: [],
   },
   bancos: {
-    columns: ["nome", "banco", "tipo", "saldo"],
+    // ⛔ `saldo` saiu das colunas graváveis em 02/09/2026, e essa é a correção
+    // que a tela `/bancos` trouxe junto. Saldo digitado à mão foi o que
+    // produziu a linha "Asaas: R$ 429,47" enquanto o `GET /finance/balance` da
+    // MESMA conta respondia R$ 13,79. O saldo destas contas só se move pelo
+    // gatilho `apply_lancamento_saldo`, a partir de lançamento real; o saldo
+    // do gateway é lido do gateway, e não tem cópia aqui.
+    columns: ["nome", "banco", "tipo"],
     orderBy: "nome",
     ascending: true,
-    numeric: ["saldo"],
+    numeric: [],
     integer: [],
-  },
-  cartoes: {
-    columns: ["nome", "bandeira", "limite", "usado", "fechamento", "vencimento"],
-    orderBy: "nome",
-    ascending: true,
-    numeric: ["limite", "usado"],
-    integer: ["fechamento", "vencimento"],
   },
   contratos: {
     // ⛔ `servico` saiu das colunas graváveis em 31/08/2026, quando o contrato

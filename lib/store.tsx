@@ -13,7 +13,6 @@ import { apurarCarga, resumoDeFalhas, type Falha } from "./carga";
 import type {
   Assinatura,
   Banco,
-  Cartao,
   Cliente,
   ContaPagar,
   ContaReceber,
@@ -21,7 +20,6 @@ import type {
   ContratoServico,
   Lancamento,
   NotaFiscal,
-  RetencaoFiscal,
 } from "./types";
 
 export interface DB {
@@ -33,9 +31,7 @@ export interface DB {
   contas_pagar: ContaPagar[];
   lancamentos: Lancamento[];
   bancos: Banco[];
-  cartoes: Cartao[];
   notas_fiscais: NotaFiscal[];
-  retencoes_fiscais: RetencaoFiscal[];
 }
 
 export type ResourceKey = keyof DB;
@@ -49,12 +45,8 @@ const EMPTY: DB = {
   contas_pagar: [],
   lancamentos: [],
   bancos: [],
-  cartoes: [],
   notas_fiscais: [],
-  retencoes_fiscais: [],
 };
-
-const RESOURCE_KEYS = Object.keys(EMPTY) as ResourceKey[];
 
 async function apiFetch<T = unknown>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -445,6 +437,5 @@ export function useRecursos(...keys: ResourceKey[]): void {
     void garantir(...(assinatura.split(",").filter(Boolean) as ResourceKey[]));
     // `assinatura` é a identidade real do pedido; o array literal de `keys`
     // muda de referência a cada render e faria o efeito rodar para sempre.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assinatura, garantir]);
 }

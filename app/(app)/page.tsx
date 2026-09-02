@@ -1,16 +1,19 @@
 "use client";
 
 import { useStore, useRecursos } from "@/lib/store";
-import { MetricGrid, Empty, type ItemMetrica, Dinheiro } from "@/components/ui";
+import { MetricGrid, Empty, type ItemMetrica, Dinheiro, Sigilo } from "@/components/ui";
 import { fmt, fmtDate, today, monthlyValue } from "@/lib/format";
+import { usePainelAsaas } from "./usePainelAsaas";
 
 export default function DashboardPage() {
   const { db, getCN } = useStore();
   // `D-91`: esta tela pede o que usa — antes o provider trazia as 10 tabelas.
-  useRecursos("assinaturas", "bancos", "cartoes", "clientes", "contas_pagar", "contas_receber", "contratos");
+  useRecursos("assinaturas", "clientes", "contas_pagar", "contas_receber", "contratos");
+  // ⚖️ 02/09/2026: saldo e cartões deixaram de sair de `bancos`/`cartoes` e
+  // passam a vir do Asaas ao vivo. O motivo está em `lib/asaas/conta.ts` — a
+  // soma de `bancos.saldo` exibia R$ 429,47 com o gateway em R$ 13,79.
+  const asaas = usePainelAsaas();
   const t = today();
-
-  const saldo = db.bancos.reduce((a, b) => a + Number(b.saldo || 0), 0);
   const aRec = db.contas_receber.filter((r) => r.status === "Pendente").reduce((a, b) => a + Number(b.valor || 0), 0);
   const aPag = db.contas_pagar.filter((r) => r.status === "Pendente").reduce((a, b) => a + Number(b.valor || 0), 0);
   const mrr = db.assinaturas
@@ -22,8 +25,14 @@ export default function DashboardPage() {
   /* `RNF-19` — cada numero declara de onde saiu. A `fonte` e obrigatoria no
      tipo `ItemMetrica`: nao e possivel exibir KPI sem procedencia. */
   const metrics: ItemMetrica[] = [
-    { l: "Saldo total", v: fmt(saldo), c: "c-blue", icone: "building-bank",
-      fonte: "soma do campo saldo das contas bancarias cadastradas" },
+    /* `RNF-19` — a fonte mudou junto com o numero: ela agora nomeia o
+       endpoint, nao uma coluna que alguem digitou. Ela e literal mesmo quando a
+       leitura falha: a ORIGEM do numero nao muda com a rede caida. Quem conta a
+       falha e o valor (`—`, nunca zero) e o card de extrato logo abaixo. */
+    { l: "Saldo na conta Asaas",
+      v: asaas.saldo === null ? "—" : fmt(asaas.saldo),
+      c: "c-blue", icone: "building-bank",
+      fonte: "GET /finance/balance do Asaas, lido ao abrir a tela" },
     { l: "A receber", v: fmt(aRec), c: "c-green", icone: "arrow-down-circle",
       fonte: "contas a receber com status Pendente" },
     { l: "A pagar", v: fmt(aPag), c: "c-red", icone: "arrow-up-circle",
@@ -110,49 +119,63 @@ export default function DashboardPage() {
         <div className="card">
           <div className="stitle">
             <i className="ti ti-building-bank c-orange" />
-            Saldo nas contas
+            Últimas movimentações no Asaas
           </div>
-          {db.bancos.length ? (
+          {asaas.erro ? (
+            <div className="recado recado-erro" role="status">
+              Não foi possível ler o extrato do Asaas: {asaas.erro}
+            </div>
+          ) : asaas.extrato.length ? (
             <table>
               <tbody>
-                {db.bancos.map((b) => (
-                  <tr key={b.id}>
-                    <td>{b.nome}</td>
-                    <td className="c-green" style={{ fontWeight: 500 }}><Dinheiro v={b.saldo} /></td>
+                {asaas.extrato.map((l) => (
+                  <tr key={l.id}>
+                    <Sigilo as="td" className="tiny">{l.descricao}</Sigilo>
+                    <td className={l.valor < 0 ? "c-red" : "c-green"} style={{ fontWeight: 500 }}>
+                      <Dinheiro v={l.valor} />
+                    </td>
+                    <td className="tiny">{fmtDate(l.data)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           ) : (
-            <Empty>Nenhuma conta</Empty>
+            <Empty>{asaas.carregando ? "Lendo o extrato no Asaas..." : "Sem movimentação"}</Empty>
           )}
         </div>
 
         <div className="card">
           <div className="stitle">
             <i className="ti ti-credit-card c-orange" />
-            Limite de cartões
+            Recebimentos no cartão
           </div>
-          {db.cartoes.length ? (
-            db.cartoes.map((c) => {
-              const pct = Math.min(100, Math.round((Number(c.usado || 0) / Number(c.limite || 1)) * 100));
-              const cl = pct > 80 ? "pfill-r" : pct > 60 ? "pfill-a" : "";
-              return (
-                <div key={c.id} style={{ marginBottom: 12 }}>
-                  <div className="row" style={{ fontSize: 12, marginBottom: 4, color: "var(--tinta-2)" }}>
-                    <span>{c.nome}</span>
-                    <span style={{ color: "var(--tinta)" }}>
-                      <Dinheiro v={c.usado} /> / <Dinheiro v={c.limite} />
-                    </span>
-                  </div>
-                  <div className="pbar">
-                    <div className={`pfill ${cl}`} style={{ width: pct + "%" }} />
-                  </div>
-                </div>
-              );
-            })
+          {/* ⛔ Era "Limite de cartões", e o limite nunca existiu: a tabela
+              `cartoes` estava vazia e o Asaas nao conhece limite de cartao de
+              cliente. O que existe, e e real, e quanto entrou por cada cartao. */}
+          {asaas.erro ? (
+            <div className="recado recado-erro" role="status">
+              Não foi possível ler os cartões do Asaas: {asaas.erro}
+            </div>
+          ) : asaas.cartoes.length ? (
+            <table>
+              <tbody>
+                {asaas.cartoes.map((c) => (
+                  <tr key={c.chave}>
+                    <Sigilo as="td" className="tiny">
+                      {c.bandeira} {c.final ? `•••• ${c.final}` : ""}
+                    </Sigilo>
+                    <td className="c-green" style={{ fontWeight: 500 }}>
+                      <Dinheiro v={c.liquidado} />
+                    </td>
+                    <td className="tiny">{c.cobrancas} cobr.</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           ) : (
-            <Empty>Nenhum cartão</Empty>
+            <Empty>
+              {asaas.carregando ? "Lendo os cartões no Asaas..." : "Nenhuma cobrança no cartão"}
+            </Empty>
           )}
         </div>
       </div>

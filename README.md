@@ -2,7 +2,9 @@
 
 Sistema de gestão financeira da **Scope Company** — back-end real (Next.js + Supabase) sobre a identidade visual preto/laranja do protótipo.
 
-Módulos: Dashboard, Clientes, Contratos, **Assinaturas** (recorrência), Contas a receber, Contas a pagar, Contas bancárias, Cartões, Relatórios (BI) e **Notas Fiscais (NFS-e via Asaas)**.
+Módulos: Dashboard, Clientes, Contratos, **Assinaturas** (recorrência), Contas a receber, Contas a pagar, **Contas bancárias** e **Cartões** (leitura ao vivo do Asaas), Relatórios (BI) e **Notas Fiscais (NFS-e via Asaas)**.
+
+> ⛔ **02/09/2026 — as telas `Em revisão` e `Fiscal` foram removidas** a pedido do dono. O que elas protegiam continua de pé: a recusa de cobrança para cliente provisório mora em `app/api/[resource]/route.ts`, e a alíquota datada da NFS-e em `lib/fiscal.ts`. Sumiu a tela, não a regra.
 
 - **Contas a receber** = o que os clientes pagam à Scope (sites, assinaturas, projetos…).
 - **Contas a pagar** = custos da Scope para existir (aluguel, funcionários, ferramentas…).
@@ -158,12 +160,12 @@ registrou riscos que foram **aceitos, não resolvidos**. Parte caiu em
 
 | Item | Estado |
 |---|---|
-| Suíte de testes | ✅ **existe desde 25/08/2026** — `npm test`, **123 casos** em 7 arquivos (contrato, assinatura, recorrência, sincronia, colunas graváveis). ♻️ Medido em 26/08/2026; eram 103 em 25/08 |
+| Suíte de testes | ✅ **existe desde 25/08/2026** — `npm test`, **377 casos** em 19 arquivos. ♻️ Medido em 02/09/2026; eram 123 em 26/08 e 103 em 25/08 |
 | CI | ✅ **existe desde 25/08/2026** — `.github/workflows/ci.yml`: tipos, **lint**, testes e build |
-| **Lint** | ✅ **passou a existir de verdade em 25/08/2026.** O script era `next lint` **sem ESLint instalado e sem config** — um comando que promete análise e entrega silêncio: saía limpo porque não olhava para nada. Agora ESLint é dependência real, há `eslint.config.mjs`, e o CI tem passo próprio de lint (0 erros, 23 avisos) |
+| **Lint** | ✅ **passou a existir de verdade em 25/08/2026.** O script era `next lint` **sem ESLint instalado e sem config** — um comando que promete análise e entrega silêncio: saía limpo porque não olhava para nada. Agora ESLint é dependência real, há `eslint.config.mjs`, e o CI tem passo próprio de lint (0 erros, **17 avisos** — medido em 02/09/2026; eram 23) |
 | Unicidade de CPF/CNPJ | ✅ índice único normalizado (era o Ponto 1 do Gate G0) |
 | Consumo de `cliente.criado` | ✅ implementado (era o Ponto 7 do Gate G0) |
-| **Integração Asaas exercitada contra a API real** | ⛔ **NUNCA foi.** `lib/asaas.ts` existe e nenhuma chamada real foi feita. Existir arquivo não é integração que funciona |
+| **Integração Asaas exercitada contra a API real** | ✅ **passou a ser em 02/09/2026.** `/bancos` e `/cartoes` leem a conta de produção a cada abertura — saldo (`/finance/balance`), extrato (`/financialTransactions`), titular, chave Pix e as cobranças no cartão (`/payments?billingType=CREDIT_CARD` + `/installments`). ⚠️ O que forçou a mudança foi uma medição: a tabela `bancos` dizia **R$ 429,47** e a conta tinha **R$ 13,79** |
 | **Histórico de commits** | ✅ **7 commits, todos publicados** em `origin/main` (`40947b2`) — ♻️ corrigido em 26/08/2026: a linha dizia *"um único commit inicial"* e subestimava o próprio repositório. A evolução de 25 e 26/08 (integração, lint de verdade, `/saude`, `L-63`, `L-64`) **é auditável** |
 | **Testes com Postgres real** | ⚠️ os testes usam um Supabase em memória: provam a regra de negócio, **não** o SQL. Constraint de banco só é exercitada rodando o schema |
 

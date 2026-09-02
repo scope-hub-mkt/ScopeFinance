@@ -23,7 +23,7 @@ describe("apurarCarga", () => {
     // respostas boas iam para o lixo junto com a décima.
     const chaves = [
       "clientes", "contratos", "assinaturas", "contas_receber", "contas_pagar",
-      "lancamentos", "bancos", "cartoes", "notas_fiscais", "retencoes_fiscais",
+      "lancamentos", "bancos", "contrato_servicos", "notas_fiscais", "retencoes_fiscais",
     ];
     const resultados = [
       ...chaves.slice(0, 9).map(() => ok([])),
@@ -78,16 +78,16 @@ describe("resumoDeFalhas", () => {
 
   it("mais de um: conta e lista os dois", () => {
     const f = resumoDeFalhas([
-      { recurso: "cartoes", motivo: "500" },
+      { recurso: "clientes", motivo: "500" },
       { recurso: "bancos", motivo: "500" },
     ]);
     expect(f).toContain("2 recursos");
-    expect(f).toContain("cartoes, bancos");
+    expect(f).toContain("clientes, bancos");
   });
 
   it("motivo repetido aparece uma vez — a frase informa, não ecoa", () => {
     const f = resumoDeFalhas([
-      { recurso: "cartoes", motivo: "timeout" },
+      { recurso: "clientes", motivo: "timeout" },
       { recurso: "bancos", motivo: "timeout" },
     ]);
     expect(f.match(/timeout/g)).toHaveLength(1);
