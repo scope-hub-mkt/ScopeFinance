@@ -246,6 +246,23 @@ class ConsultaFake implements PromiseLike<{ data: unknown; error: unknown; count
           const bruto = resto.join(".");
           if (op === "eq") return String(valor(l, col)) === bruto;
           if (op === "is" && bruto === "null") return valor(l, col) === null || valor(l, col) === undefined;
+          // ⚖️ Comparações de ordem entram porque `/api/integracao/serie-mensal`
+          // as usa: a conta entra na série por vencimento OU por data de baixa,
+          // e as duas pernas são `gte`. Sem isto o fake lançava, o handler
+          // devolvia 500 e o teste da rota era impossível de escrever —
+          // deixando justamente a rota da série sem prova do filtro de origem.
+          if (op === "gte" || op === "gt" || op === "lte" || op === "lt") {
+            const v = valor(l, col);
+            // Nulo não participa de comparação de ordem: no Postgres
+            // `null >= x` é desconhecido, e tratá-lo como falso aqui é o que
+            // reproduz o comportamento real.
+            if (v === null || v === undefined) return false;
+            const a = String(v);
+            if (op === "gte") return a >= bruto;
+            if (op === "gt") return a > bruto;
+            if (op === "lte") return a <= bruto;
+            return a < bruto;
+          }
           throw new Error(`supabase-fake: or("${termo}") não implementado`);
         }),
     });

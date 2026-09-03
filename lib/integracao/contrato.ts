@@ -54,9 +54,31 @@ export interface PontoMensalContrato {
   periodo: string; // 'YYYY-MM'
   faturamento: number;
   recebido: number;
+  /**
+   * `RNF-19` — todo número declara de onde veio.
+   *
+   * ⚠️ Entrou por ponto, e não num envelope em volta da lista, porque a rota
+   * devolve um array e envelopá-la mudaria o formato que a Dashboard já
+   * consome. Campo novo em objeto existente é aditivo; troca de forma não é.
+   */
+  fonte?: string;
 }
 
-export const FONTE = "scopefinance";
+/**
+ * De onde o número saiu — `RNF-19`.
+ *
+ * ♻️ **Deixou de ser só "scopefinance" em 03/09/2026** (`D-99`, `RN-51`). O
+ * ScopeFinance continua sendo quem responde e quem é dono do número, mas o
+ * **fato** passou a nascer no gateway: as quatro rotas da ponte entregam só
+ * linha com `origem_lancamento = 'asaas'`. Dizer apenas "scopefinance"
+ * descreveria o mensageiro e calaria sobre a origem, que é justamente o que a
+ * decisão do dono fixou.
+ *
+ * ⛔ Nada compara este valor por igualdade — conferido nos dois repositórios
+ * antes de mudá-lo. Ele é declaração para leitura humana, e o dia em que
+ * virar chave de decisão precisa de constante própria, não deste texto.
+ */
+export const FONTE = "asaas via scopefinance";
 
 // ─── Linhas cruas do banco, no mínimo que os cálculos precisam ──────
 
@@ -273,7 +295,13 @@ export function calcularSerie(
   meses: number
 ): PontoMensalContrato[] {
   const mapa = new Map<string, PontoMensalContrato>(
-    periodosAte(hoje, meses).map((p) => [p, { periodo: p, faturamento: 0, recebido: 0 }])
+    periodosAte(hoje, meses).map((p) => [
+      p,
+      // `RNF-19` — a fonte viaja no ponto ZERADO também, de propósito: é
+      // justamente o mês sem movimento que precisa dizer se o zero foi
+      // apurado ou é ausência de dado.
+      { periodo: p, faturamento: 0, recebido: 0, fonte: FONTE },
+    ])
   );
 
   for (const c of receber) {

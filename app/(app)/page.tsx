@@ -14,7 +14,14 @@ export default function DashboardPage() {
   // soma de `bancos.saldo` exibia R$ 429,47 com o gateway em R$ 13,79.
   const asaas = usePainelAsaas();
   const t = today();
-  const aRec = db.contas_receber.filter((r) => r.status === "Pendente").reduce((a, b) => a + Number(b.valor || 0), 0);
+  // ⛔ **O total do gateway não inclui o que foi digitado à mão** (`RF-93`,
+  // `RN-52`, `D-100`). Antes de 03/09/2026 as duas origens somavam no mesmo
+  // número, e um ajuste lançado à mão era indistinguível de uma cobrança que
+  // o Asaas emitiu — inclusive para quem apresentava o painel.
+  const pendentes = db.contas_receber.filter((r) => r.status === "Pendente");
+  const soma = (ls: typeof pendentes) => ls.reduce((a, b) => a + Number(b.valor || 0), 0);
+  const aRec = soma(pendentes.filter((r) => r.origem_lancamento === "asaas"));
+  const aRecManual = soma(pendentes.filter((r) => r.origem_lancamento === "manual"));
   const aPag = db.contas_pagar.filter((r) => r.status === "Pendente").reduce((a, b) => a + Number(b.valor || 0), 0);
   const mrr = db.assinaturas
     .filter((a) => a.status === "Ativa" && a.direcao === "receber")
@@ -33,8 +40,22 @@ export default function DashboardPage() {
       v: asaas.saldo === null ? "—" : fmt(asaas.saldo),
       c: "c-blue", icone: "building-bank",
       fonte: "GET /finance/balance do Asaas, lido ao abrir a tela" },
-    { l: "A receber", v: fmt(aRec), c: "c-green", icone: "arrow-down-circle",
-      fonte: "contas a receber com status Pendente" },
+    { l: "A receber (gateway)", v: fmt(aRec), c: "c-green", icone: "arrow-down-circle",
+      fonte: "contas a receber Pendentes de origem Asaas" },
+    /* ⚖️ Cartão à parte, nunca somado ao de cima. Ele aparece só quando há
+       linha manual: um zero permanente aqui viraria ruído, e ruído ensina a
+       ignorar a linha justamente no dia em que ela tem número. */
+    ...(aRecManual > 0
+      ? [
+          {
+            l: "Fora do gateway",
+            v: fmt(aRecManual),
+            c: "c-orange",
+            icone: "pencil",
+            fonte: "contas a receber Pendentes lançadas à mão — não atravessam a ponte",
+          } as ItemMetrica,
+        ]
+      : []),
     { l: "A pagar", v: fmt(aPag), c: "c-red", icone: "arrow-up-circle",
       fonte: "contas a pagar com status Pendente" },
     { l: "MRR", v: fmt(mrr), c: "c-orange", icone: "repeat",

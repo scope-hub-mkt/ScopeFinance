@@ -41,6 +41,16 @@ export const GET = rotaIntegracao(async (req: Request) => {
         "valor, valor_contratado, valor_cobrado, valor_liquido, valor_pago, deducoes, " +
         "status, asaas_status, vencimento, pago_em, competencia, created_at"
     )
+    // ⛔ **Só o que nasceu no gateway atravessa a ponte** (`RF-94`, `RN-51`,
+    // `D-99`). Recebível digitado à mão existe, aparece em `/receber/manuais`
+    // e é conciliável — o que ele não faz é chegar à Dashboard como se o
+    // Asaas o tivesse recebido.
+    //
+    // ⚖️ O filtro mora **na consulta**, não em quem escreve: vale para
+    // qualquer caminho que produza linha manual — a tela, a recorrência
+    // interna, um backfill futuro — em vez de depender de cada um lembrar. É
+    // a mesma correção que a contagem de clientes ativos recebeu em 28/08.
+    .eq("origem_lancamento", "asaas")
     // Teto declarado, pela mesma doutrina de `lib/scopefinance.ts` da
     // Dashboard: um teto existe para impedir que a tabela cresça até derrubar
     // o egress, não para apertar o caso normal. Hoje são 194 linhas.

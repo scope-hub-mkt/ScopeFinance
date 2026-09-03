@@ -17,6 +17,7 @@ import {
   periodosAte,
   valorRecebido,
   type LinhaReceber,
+  FONTE,
 } from "@/lib/integracao/contrato";
 
 /**
@@ -95,7 +96,12 @@ describe("pagamentosDeReceber — RN-06 (só o que entrou vira comissão)", () =
 
   it("declara a fonte em cada linha — RNF-19", () => {
     const [p] = pagamentosDeReceber([conta({ status: "Pago", pago_em: "2026-08-20" })]);
-    expect(p.fonte).toBe("scopefinance");
+    expect(p.fonte).toBe(FONTE);
+    // ♻️ 03/09/2026: a fonte deixou de ser so o mensageiro. O valor
+    // declara agora a ORIGEM do fato (`D-99`), e a asserçao passou a
+    // usar a constante — congelar o texto aqui obrigaria a editar o
+    // teste a cada refinamento da declaraçao, sem provar nada a mais.
+    expect(p.fonte).toContain("asaas");
   });
 
   it("leva deduções junto, para a Dashboard não precisar adivinhar imposto", () => {
@@ -171,7 +177,8 @@ describe("calcularResumo — RF-01 do painel da Dashboard", () => {
   });
 
   it("declara a fonte — RNF-19", () => {
-    expect(calcularResumo([], [], 0, hoje).fonte).toBe("scopefinance");
+    expect(calcularResumo([], [], 0, hoje).fonte).toBe(FONTE);
+    expect(calcularResumo([], [], 0, hoje).fonte).toContain("asaas");
   });
 });
 
@@ -408,7 +415,7 @@ describe("servicosContratadosParaContrato — a perna que faltava na ponte", () 
       // Item sem recorrência própria herda a do contrato.
       recorrencia: "Mensal",
       ativo: true,
-      fonte: "scopefinance",
+      fonte: FONTE,
     });
     expect(r[1]).toMatchObject({
       referencia: "a1",
