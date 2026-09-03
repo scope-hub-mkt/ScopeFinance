@@ -6,6 +6,8 @@ import { ok, fail, handleError } from "@/lib/api";
 import { today } from "@/lib/format";
 import { enfileirarEvento, entregarFila } from "@/lib/integracao/sincronia";
 import { apagarSnapshots } from "@/lib/etl/snapshot";
+import { usuarioAtual } from "@/lib/dominio/usuarios";
+import { recusaAoMexerEmRecebivel, origemDaEscrita } from "@/lib/dominio/recebivel-manual";
 
 export const dynamic = "force-dynamic";
 
@@ -104,6 +106,16 @@ export async function POST(
     // que fazer, em vez de receber um erro de banco.
     const bloqueio = await bloqueadoPorCadastroProvisorio(supabase, resource, input);
     if (bloqueio) return fail(bloqueio, 409);
+
+    // ⛔ **Recebível só a master lança** (`RN-53`, `D-100`). A tela já esconde
+    // o botão de quem não pode, mas esconder não é autorizar: sem esta linha,
+    // um `POST /api/contas_receber` com sessão válida criaria a cobrança do
+    // mesmo jeito. É a doutrina de `RN-50` aplicada a dinheiro.
+    if (resource === "contas_receber") {
+      const eu = await usuarioAtual();
+      const recusa = recusaAoMexerEmRecebivel(eu && { master: eu.master, papel: eu.papel }, "manual");
+      if (recusa) return fail(recusa, 403);
+    }
     const { data, error } = await supabase.from(resource).insert(input).select().single();
     if (error) {
       // O índice único do documento (Gate G0 Ponto 1, `D-19`) precisa explicar

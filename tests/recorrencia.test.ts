@@ -66,6 +66,18 @@ describe("gerarRecorrencias", () => {
     expect(banco.tabela("assinaturas")[0].proximo_venc).toBe("2026-09-01");
   });
 
+  it("a parcela da recorrência interna nasce FORA do gateway", async () => {
+    // `RF-93` / `RN-52` / `D-100`. Esta assinatura foi cadastrada aqui, não
+    // é uma `subscription` do Asaas — o gateway cobra as dele sozinho e as
+    // devolve pelo webhook. Sem a marcação, a parcela entraria no
+    // faturamento e atravessaria a ponte para a Dashboard como se alguém
+    // tivesse pagado, quando ela acabou de ser gerada e está pendente.
+    novoBanco({ assinaturas: [assinatura()] });
+    await gerarRecorrencias(banco as never, "2026-08-15");
+
+    expect(banco.tabela("contas_receber")[0].origem_lancamento).toBe("manual");
+  });
+
   it("assinatura a pagar gera conta a PAGAR, não a receber", async () => {
     novoBanco({
       assinaturas: [

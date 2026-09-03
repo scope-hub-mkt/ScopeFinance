@@ -121,6 +121,17 @@ export function linhaDaCobranca(
 
   const linha: Record<string, unknown> = {
     asaas_payment_id: asaasId,
+    // ⛔ **Explícito de propósito, mesmo sendo o caso óbvio** (`RF-93`,
+    // `D-100`). A coluna tem default `'manual'`: linha que ninguém marcou
+    // como do gateway **não é** do gateway, e é esse default que faz uma
+    // falha de escrita virar recebível manual visível em vez de receita
+    // fantasma no total do Asaas.
+    //
+    // ⚖️ E fica AQUI, na tradução pura, não em quem chama: `linhaDaCobranca`
+    // é a mesma função para o webhook e para o backfill, então marcar aqui
+    // cobre os dois caminhos de uma vez. Marcar em cada chamador seria pedir
+    // que os dois lembrassem — e o terceiro, quando existir, não lembraria.
+    origem_lancamento: "asaas",
     descricao:
       (typeof o.description === "string" && o.description.trim()) || `Cobrança Asaas ${asaasId}`,
     valor: dinheiro(o.value),

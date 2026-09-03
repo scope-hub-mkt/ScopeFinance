@@ -93,6 +93,18 @@ export async function gerarRecorrencias(
           forma_pagamento: "PIX",
           conta_id: a.conta_id,
           competencia: comp,
+          // ⛔ **A recorrência INTERNA não é o gateway** (`RF-93`, `D-100`).
+          //
+          // Esta linha nasce de uma assinatura cadastrada aqui, não de uma
+          // `subscription` do Asaas — o Asaas cobra as dele sozinho e as
+          // devolve pelo webhook. Sem esta marcação a parcela entraria no
+          // faturamento e atravessaria a ponte como se o dinheiro tivesse
+          // entrado, quando ninguém pagou nada ainda.
+          //
+          // ⚖️ Explícito mesmo coincidindo com o default da coluna: o default
+          // protege contra o esquecimento, e a linha escrita declara a
+          // intenção. Se o default mudar um dia, este caminho continua certo.
+          origem_lancamento: "manual",
         });
         if (!insErr) {
           result.geradas++;
