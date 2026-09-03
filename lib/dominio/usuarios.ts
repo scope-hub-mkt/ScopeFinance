@@ -275,6 +275,11 @@ export async function definirSenha(id: string, senha: string): Promise<void> {
   const supabase = createSupabaseAdmin();
   const { error } = await supabase.auth.admin.updateUserById(id, { password: senha });
   if (error) throw new ErroDeUsuario(`Não foi possível trocar a senha: ${error.message}`);
+
+  // `RF-99` / `RN-56` — trocar a senha LIMPA a marca de provisória. É o ato
+  // que destranca a conta: enquanto ela estiver de pé, o middleware devolve
+  // a pessoa para /perfil, e só para lá.
+  await supabase.from("usuarios").update({ senha_provisoria: false }).eq("id", id);
 }
 
 /**

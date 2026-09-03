@@ -84,6 +84,38 @@ export class BancoFake {
     return this.tabelas.get(nome)!;
   }
 
+  /**
+   * O mínimo de `auth.admin` que o domínio usa — `RF-99`.
+   *
+   * ⚖️ **Existe porque sem ele `definirSenha` era intestável**, e com ela
+   * ficava de fora a única prova de que trocar a senha limpa a marca de
+   * provisória. Guarda o que foi pedido em `chamadas` para o teste poder
+   * afirmar que a credencial FOI trocada, não só que o perfil mudou.
+   *
+   * ⛔ Não valida senha nem simula GoTrue: quem valida é `recusaDeSenha`, e
+   * duplicar a regra aqui faria o teste passar por um motivo diferente do
+   * que vale em produção.
+   */
+  readonly chamadasAuth: { metodo: string; id: string; dados: unknown }[] = [];
+
+  readonly auth = {
+    admin: {
+      updateUserById: async (id: string, dados: unknown) => {
+        this.chamadasAuth.push({ metodo: "updateUserById", id, dados });
+        return { data: { user: { id } }, error: null };
+      },
+      createUser: async (dados: { email?: string }) => {
+        const id = randomUUID();
+        this.chamadasAuth.push({ metodo: "createUser", id, dados });
+        return { data: { user: { id, email: dados.email } }, error: null };
+      },
+      deleteUser: async (id: string) => {
+        this.chamadasAuth.push({ metodo: "deleteUser", id, dados: null });
+        return { data: null, error: null };
+      },
+    },
+  };
+
   from(nome: string): ConsultaFake {
     return new ConsultaFake(this, nome);
   }
