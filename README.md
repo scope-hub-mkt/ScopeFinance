@@ -264,13 +264,14 @@ registrou riscos que foram **aceitos, não resolvidos**. Parte caiu em
 
 | Item | Estado |
 |---|---|
-| Suíte de testes | ✅ **existe desde 25/08/2026** — `npm test`, **415 casos** em 24 arquivos (+1 pulado). ♻️ Medido em 04/09/2026; eram 377 em 02/09, 123 em 26/08 e 103 em 25/08 |
+| Suíte de testes | ✅ **existe desde 25/08/2026** — `npm test`, **420 casos** em 25 arquivos (+1 pulado). ♻️ Medido em 04/09/2026; eram 415 mais cedo no mesmo dia, 377 em 02/09, 123 em 26/08 e 103 em 25/08 |
 | CI | ✅ **existe desde 25/08/2026** — `.github/workflows/ci.yml`: tipos, **lint**, testes e build |
 | **Lint** | ✅ **passou a existir de verdade em 25/08/2026.** O script era `next lint` **sem ESLint instalado e sem config** — um comando que promete análise e entrega silêncio: saía limpo porque não olhava para nada. Agora ESLint é dependência real, há `eslint.config.mjs`, e o CI tem passo próprio de lint (0 erros, **18 avisos** — medido em 04/09/2026; eram 17 em 02/09 e 23 antes) |
 | Unicidade de CPF/CNPJ | ✅ índice único normalizado (era o Ponto 1 do Gate G0) |
 | Consumo de `cliente.criado` | ✅ implementado (era o Ponto 7 do Gate G0) |
 | **Integração Asaas exercitada contra a API real** | ✅ **passou a ser em 02/09/2026.** `/bancos` e `/cartoes` leem a conta de produção a cada abertura — saldo (`/finance/balance`), extrato (`/financialTransactions`), titular, chave Pix e as cobranças no cartão (`/payments?billingType=CREDIT_CARD` + `/installments`). ⚠️ O que forçou a mudança foi uma medição: a tabela `bancos` dizia **R$ 429,47** e a conta tinha **R$ 13,79** |
 | **Histórico de commits** | ✅ **7 commits, todos publicados** em `origin/main` (`40947b2`) — ♻️ corrigido em 26/08/2026: a linha dizia *"um único commit inicial"* e subestimava o próprio repositório. A evolução de 25 e 26/08 (integração, lint de verdade, `/saude`, `L-63`, `L-64`) **é auditável** |
+| **Credencial sem cadastro entrava** | ♻️ **fechado em 04/09/2026.** `requireUser()` conferia só a existência da sessão, e as rotas usam `createSupabaseAdmin()` — RLS contornada. Como a tela de login oferece *criar conta* e o Supabase está com `disable_signup: false`, qualquer pessoa criava credencial e entrava. **Medido: havia uma, criada e usada em 04/09.** Agora a trava mora em `requireUser()` (API) e no `middleware.ts` (telas), e `ativo` passou a ser conferido — desligar alguém não o tirava do sistema. ⚠️ **O `disable_signup` continua `false` no painel do Supabase**: a credencial ainda nasce, só não entra |
 | **Testes com Postgres real** | ⚠️ os testes usam um Supabase em memória: provam a regra de negócio, **não** o SQL. Constraint de banco só é exercitada rodando o schema |
 
 ---

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { LogoIcon } from "@/components/Logo";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -13,6 +13,24 @@ export default function LoginPage() {
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
+
+  /**
+   * A recusa do `middleware.ts` chega por `?recusa=`.
+   *
+   * ⚠️ Sem isto, quem foi recusado por falta de cadastro vê a tela de login
+   * limpa e conclui que errou a senha — e tenta de novo, indefinidamente. Lido
+   * em `useEffect` de propósito: `useSearchParams` obrigaria um limite de
+   * Suspense só para mostrar uma frase.
+   */
+  useEffect(() => {
+    const motivo = new URLSearchParams(window.location.search).get("recusa");
+    if (!motivo) return;
+    setErr(
+      motivo === "inativo"
+        ? "O seu cadastro está desativado. Fale com a conta administradora."
+        : "A sua credencial existe, mas não há cadastro correspondente. Fale com a conta administradora."
+    );
+  }, []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
