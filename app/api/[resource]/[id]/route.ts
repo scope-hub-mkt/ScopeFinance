@@ -5,6 +5,8 @@ import { isResource, sanitizeInput } from "@/lib/resources";
 import { ok, fail, handleError } from "@/lib/api";
 import { apagarSnapshots } from "@/lib/etl/snapshot";
 import { enfileirarEvento, entregarFila } from "@/lib/integracao/sincronia";
+import { usuarioAtual } from "@/lib/dominio/usuarios";
+import { recusaAoMexerEmRecebivel, origemDaEscrita } from "@/lib/dominio/recebivel-manual";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +22,29 @@ export async function PATCH(
     const body = (await req.json()) as Record<string, unknown>;
     const input = sanitizeInput(resource, body);
     const supabase = createSupabaseAdmin();
+
+    // ⛔ **Recebível: a master lança o manual, e NINGUÉM edita o do gateway**
+    // (`RN-53`, `D-100`). A tela já esconde o botão de quem não pode, mas
+    // esconder não é autorizar — sem isto, um PATCH com sessão válida edita
+    // a linha do mesmo jeito.
+    //
+    // ⚖️ A origem vem da LINHA EXISTENTE, não do corpo do pedido:
+    // `origem_lancamento` não é campo gravável, então perguntar ao pedido
+    // devolveria sempre "manual" e a guarda protegeria nada.
+    if (resource === "contas_receber") {
+      const { data: atual } = await supabase
+        .from("contas_receber")
+        .select("origem_lancamento")
+        .eq("id", id)
+        .maybeSingle();
+      const eu = await usuarioAtual();
+      const recusa = recusaAoMexerEmRecebivel(
+        eu && { master: eu.master, papel: eu.papel },
+        origemDaEscrita(atual)
+      );
+      if (recusa) return fail(recusa, 403);
+    }
+
     const { data, error } = await supabase
       .from(resource)
       .update(input)
@@ -84,6 +109,29 @@ export async function DELETE(
     const { resource, id } = await params;
     if (!isResource(resource)) return fail("Recurso inválido", 404);
     const supabase = createSupabaseAdmin();
+
+    // ⛔ **Recebível: a master lança o manual, e NINGUÉM edita o do gateway**
+    // (`RN-53`, `D-100`). A tela já esconde o botão de quem não pode, mas
+    // esconder não é autorizar — sem isto, um PATCH com sessão válida edita
+    // a linha do mesmo jeito.
+    //
+    // ⚖️ A origem vem da LINHA EXISTENTE, não do corpo do pedido:
+    // `origem_lancamento` não é campo gravável, então perguntar ao pedido
+    // devolveria sempre "manual" e a guarda protegeria nada.
+    if (resource === "contas_receber") {
+      const { data: atual } = await supabase
+        .from("contas_receber")
+        .select("origem_lancamento")
+        .eq("id", id)
+        .maybeSingle();
+      const eu = await usuarioAtual();
+      const recusa = recusaAoMexerEmRecebivel(
+        eu && { master: eu.master, papel: eu.papel },
+        origemDaEscrita(atual)
+      );
+      if (recusa) return fail(recusa, 403);
+    }
+
     const { error } = await supabase.from(resource).delete().eq("id", id);
     if (error) return fail(error.message, 500);
     // `D-91` — quem escreve derruba o retrato do recurso. Sem isto, a tela

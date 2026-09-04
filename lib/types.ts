@@ -135,6 +135,20 @@ export interface ContaReceber {
   conta_id: string | null;
   competencia: string | null;
   asaas_payment_id: string | null;
+  /**
+   * De onde a linha nasceu — `RF-93` / `RN-52` / `D-100`.
+   *
+   * ⛔ **`'manual'` é o default do banco, e o tipo não o torna opcional de
+   * propósito.** Toda linha tem origem; o que não existe é linha sem ela. A
+   * ponte para a Dashboard entrega só `'asaas'` (`RF-94`), então tratar este
+   * campo como possivelmente ausente convidaria a um `?? "asaas"` em algum
+   * filtro — e o valor omitido cairia para o lado errado.
+   *
+   * ⚠️ Não está em `resources.contas_receber.columns`: a tela não grava esta
+   * coluna nem por engano. Quem marca `'asaas'` é `linhaDaCobranca`, a
+   * tradução que webhook e backfill compartilham.
+   */
+  origem_lancamento: "asaas" | "manual";
   created_at: string;
   updated_at: string;
 }

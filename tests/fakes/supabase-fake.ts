@@ -84,6 +84,38 @@ export class BancoFake {
     return this.tabelas.get(nome)!;
   }
 
+  /**
+   * O mínimo de `auth.admin` que o domínio usa — `RF-99`.
+   *
+   * ⚖️ **Existe porque sem ele `definirSenha` era intestável**, e com ela
+   * ficava de fora a única prova de que trocar a senha limpa a marca de
+   * provisória. Guarda o que foi pedido em `chamadas` para o teste poder
+   * afirmar que a credencial FOI trocada, não só que o perfil mudou.
+   *
+   * ⛔ Não valida senha nem simula GoTrue: quem valida é `recusaDeSenha`, e
+   * duplicar a regra aqui faria o teste passar por um motivo diferente do
+   * que vale em produção.
+   */
+  readonly chamadasAuth: { metodo: string; id: string; dados: unknown }[] = [];
+
+  readonly auth = {
+    admin: {
+      updateUserById: async (id: string, dados: unknown) => {
+        this.chamadasAuth.push({ metodo: "updateUserById", id, dados });
+        return { data: { user: { id } }, error: null };
+      },
+      createUser: async (dados: { email?: string }) => {
+        const id = randomUUID();
+        this.chamadasAuth.push({ metodo: "createUser", id, dados });
+        return { data: { user: { id, email: dados.email } }, error: null };
+      },
+      deleteUser: async (id: string) => {
+        this.chamadasAuth.push({ metodo: "deleteUser", id, dados: null });
+        return { data: null, error: null };
+      },
+    },
+  };
+
   from(nome: string): ConsultaFake {
     return new ConsultaFake(this, nome);
   }
@@ -246,6 +278,23 @@ class ConsultaFake implements PromiseLike<{ data: unknown; error: unknown; count
           const bruto = resto.join(".");
           if (op === "eq") return String(valor(l, col)) === bruto;
           if (op === "is" && bruto === "null") return valor(l, col) === null || valor(l, col) === undefined;
+          // ⚖️ Comparações de ordem entram porque `/api/integracao/serie-mensal`
+          // as usa: a conta entra na série por vencimento OU por data de baixa,
+          // e as duas pernas são `gte`. Sem isto o fake lançava, o handler
+          // devolvia 500 e o teste da rota era impossível de escrever —
+          // deixando justamente a rota da série sem prova do filtro de origem.
+          if (op === "gte" || op === "gt" || op === "lte" || op === "lt") {
+            const v = valor(l, col);
+            // Nulo não participa de comparação de ordem: no Postgres
+            // `null >= x` é desconhecido, e tratá-lo como falso aqui é o que
+            // reproduz o comportamento real.
+            if (v === null || v === undefined) return false;
+            const a = String(v);
+            if (op === "gte") return a >= bruto;
+            if (op === "gt") return a > bruto;
+            if (op === "lte") return a <= bruto;
+            return a < bruto;
+          }
           throw new Error(`supabase-fake: or("${termo}") não implementado`);
         }),
     });

@@ -48,6 +48,10 @@ export const NAV: { g: string; items: { href: string; icon: string; l: string }[
     g: "Financeiro",
     items: [
       { href: "/receber", icon: "ti-arrow-down-circle", l: "Contas a receber" },
+      // `RF-93` / `D-100` — item próprio, e não uma aba dentro de "Contas a
+      // receber": o que separa as duas é a **origem** do dinheiro, e origem
+      // que vira aba volta a se misturar no total da tela que a hospeda.
+      { href: "/receber/manuais", icon: "ti-pencil", l: "Recebíveis manuais" },
       { href: "/pagar", icon: "ti-arrow-up-circle", l: "Contas a pagar" },
     ],
   },
