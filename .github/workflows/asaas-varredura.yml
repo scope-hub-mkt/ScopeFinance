@@ -63,6 +63,20 @@ jobs:
             "https://finance.scopecompany.com.br/api/cron/asaas")
           echo "$RESP"
 
+          # ⛔ **A resposta tem de PARECER a resposta.** `curl -fsS` sem `-L`
+          # só falha em >=400: um 3xx devolve `exit 0` com o corpo
+          # `Redirecting...`, e aí o `grep` abaixo não acha nada e o job fica
+          # **verde sem nunca ter chamado o cron**. Foi exatamente o que
+          # aconteceria em 04/09/2026, quando o endereço antigo virou 308
+          # (`D-114`) — o redirecionamento, que existe para não quebrar link,
+          # comprava de volta a falha muda que o §4.9 pagou para eliminar.
+          # Conferir a forma, e não só o status, cobre a classe inteira:
+          # redirecionamento, corpo vazio e página de erro HTML.
+          if ! echo "$RESP" | grep -q '"alerta"'; then
+            echo "::error title=Resposta inesperada do cron::não veio o JSON da varredura (redirecionamento? corpo vazio?): $RESP"
+            exit 1
+          fi
+
           # ⚠️ O alerta do §4.9 vira falha do workflow de propósito. A
           # integração morrer em silêncio é o modo de falha que este projeto
           # já pagou duas vezes para aprender: os eventos continuam sendo

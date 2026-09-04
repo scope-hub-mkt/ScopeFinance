@@ -146,6 +146,8 @@ sintoma acusa a chave; a chave estava certa.
 | `POST …/api/integracao/webhooks/crm` sem HMAC | **401** |
 | `GET …/api/integracao/webhooks/asaas` | `provisionado: true`, fila `pendentes: 0`, `falhos: 0`, `alerta: false` |
 | Webhooks no painel do Asaas | os **dois** em `finance.scopecompany.com.br`, `enabled`, `interrupted: false`, 49 + 24 = **73** eventos |
+| A chamada **exata** do workflow, com o `CRON_SECRET` real | `exit 0` e o JSON da varredura: `pendentes: 0`, `falhos: 0`, `alerta: false` |
+| Ponte da Dashboard → Finance, com a chave real | `GET /api/integracao/saude` **200**, `faltando: []`, `fila_de_saida: 0`, banco alcançável |
 
 ⚖️ **A troca em [`.github/workflows/asaas-varredura.yml`](.github/workflows/asaas-varredura.yml)
 conserta uma falha silenciosa, não só um endereço.** O passo usa
@@ -154,6 +156,11 @@ conserta uma falha silenciosa, não só um endereço.** O passo usa
 nada, o workflow fica **verde e nunca chama o cron**. Contra o endereço novo,
 credencial errada devolve `exit 22` (401) e o workflow fica vermelho, que é o
 comportamento que o §4.9 comprou.
+
+⛔ **E o workflow ganhou guarda contra a classe, não contra este endereço.**
+Trocar a URL conserta o caso; conferir que a resposta **parece** a resposta
+cobre também corpo vazio e página de erro HTML. Se o JSON da varredura não
+vier, o job falha dizendo isso — em vez de passar em branco.
 
 ---
 
