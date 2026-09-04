@@ -27,7 +27,12 @@ export const GET = rotaIntegracao(async (req) => {
   const supabase = createSupabaseAdmin();
   const { data, error } = await supabase
     .from("contas_receber")
-    .select("id, cliente_id, contrato_id, valor, valor_pago, deducoes, vencimento, status, pago_em")
+    .select(
+      // `assinatura_id` entrou em 04/09/2026 (`L-162`): sem ele a Dashboard não
+      // tem por onde ligar o pagamento ao serviço prestado, e o motor de
+      // comissão lê pagamento e cria zero — verde, calado, todo dia.
+      "id, cliente_id, contrato_id, assinatura_id, valor, valor_pago, deducoes, vencimento, status, pago_em"
+    )
     // ⛔ **Só o que nasceu no gateway atravessa a ponte** (`RF-94`, `RN-51`,
     // `D-99`). Recebível digitado à mão existe, aparece em `/receber/manuais`
     // e é conciliável — o que ele não faz é chegar à Dashboard como se o

@@ -68,6 +68,28 @@ export interface PagamentoContrato {
   referencia: string;
   cliente_id: string;
   contrato_id: string | null;
+  /**
+   * A assinatura que originou a cobrança — **a chave que faz o pagamento
+   * virar comissão de alguém** (`L-162`, 04/09/2026).
+   *
+   * ⛔ **Por que ela precisou atravessar.** A Dashboard roteia o pagamento até
+   * o serviço prestado para saber quem responde por ele, e roteava por
+   * `contrato_id`. Só que **assinatura não vive dentro de um contrato — ela é
+   * o compromisso**, e é por isso que `servicos-contratados` já a emite com
+   * `contrato_id: null` e `referencia = assinaturas.id`. Resultado medido em
+   * produção: `contrato_id` nulo em 100% das linhas dos dois lados, e o motor
+   * de comissão lendo 11 pagamentos e criando **zero** comissões, verde, todo
+   * dia.
+   *
+   * ⚖️ **A junção é por identidade, não por heurística:** este valor é o mesmo
+   * `assinaturas.id` que vai em `servicos-contratados.referencia`. Conferido
+   * nos dois bancos antes de escrever esta linha.
+   *
+   * Nulo é legítimo e frequente: cobrança avulsa ou parcelada não nasce de
+   * assinatura nenhuma. A Dashboard recusa essas com motivo declarado, em vez
+   * de adivinhar um dono.
+   */
+  assinatura_id: string | null;
   valor_bruto: number;
   deducoes: number;
   recebido_em: string;
@@ -119,6 +141,14 @@ export interface LinhaReceber {
   id: string;
   cliente_id: string | null;
   contrato_id: string | null;
+  /**
+   * `L-162` — a assinatura de origem, quando a cobrança nasceu de uma.
+   *
+   * ⚠️ Opcional no tipo, e não no banco: a coluna existe em `contas_receber`
+   * desde sempre, mas os testes montam linhas mínimas e obrigá-la aqui só
+   * produziria ruído em cenário que não fala de assinatura.
+   */
+  assinatura_id?: string | null;
   valor: number | string | null;
   valor_pago: number | string | null;
   deducoes: number | string | null;
@@ -215,6 +245,7 @@ export function pagamentosDeReceber(linhas: LinhaReceber[]): PagamentoContrato[]
       referencia: l.id,
       cliente_id: l.cliente_id as string,
       contrato_id: l.contrato_id,
+      assinatura_id: l.assinatura_id ?? null,
       valor_bruto: valorRecebido(l),
       deducoes: num(l.deducoes),
       recebido_em: l.pago_em as string,
