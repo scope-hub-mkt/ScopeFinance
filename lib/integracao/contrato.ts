@@ -23,6 +23,23 @@ export interface ClienteContrato {
   email: string | null;
   tel: string | null;
   status: string | null;
+  /**
+   * Desde quando este cliente é cliente — `YYYY-MM-DD`, ou `null`.
+   *
+   * ⚖️ **É a data da PRIMEIRA COBRANÇA no Asaas, e a escolha é de evidência**
+   * (`D-107`, 04/09/2026). Nenhum `created_at` dos dois cadastros serve: os 31
+   * clientes deste banco nasceram em 04/09/2026 01:35, no mesmo minuto, porque
+   * essa é a data da importação do gateway. Usá-la faria a Dashboard afirmar
+   * que a Scope conhece a carteira inteira desde anteontem.
+   *
+   * ⚠️ **Pode ser posterior ao primeiro contato comercial** — é o instante em
+   * que a relação passou a gerar fato financeiro, não o dia em que alguém
+   * apertou a mão. Por isso o nome é `cliente_desde`, não `conhecido_desde`.
+   *
+   * ⛔ `null` quando não há cobrança nenhuma: cliente cadastrado e ainda não
+   * faturado existe, e inventar uma data para ele seria pior que o traço.
+   */
+  cliente_desde: string | null;
 }
 
 /**
@@ -107,6 +124,12 @@ export interface LinhaCliente {
   email: string | null;
   tel: string | null;
   status: string | null;
+  /**
+   * `min(vencimento)` das cobranças do cliente — calculado por quem lê o
+   * banco, não aqui. Este arquivo continua puro (nenhuma linha toca banco),
+   * e é o que o mantém testável sem infraestrutura.
+   */
+  primeiro_vencimento?: string | null;
 }
 
 const num = (v: number | string | null | undefined): number => Number(v ?? 0) || 0;
@@ -153,6 +176,10 @@ export function clienteParaContrato(c: LinhaCliente): ClienteContrato {
     email: c.email,
     tel: c.tel,
     status: c.status,
+    // ⚠️ Normaliza para `YYYY-MM-DD`: o Postgres devolve `date` como string
+    // já nesse formato, mas um `timestamptz` vindo por engano traria hora e
+    // fuso — e a Dashboard grava isto numa coluna `date`.
+    cliente_desde: c.primeiro_vencimento ? String(c.primeiro_vencimento).slice(0, 10) : null,
   };
 }
 

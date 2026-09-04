@@ -241,6 +241,7 @@ describe("clienteParaContrato", () => {
         email: null,
         tel: null,
         status: "Ativo",
+        primeiro_vencimento: "2024-12-05",
       })
     ).toEqual({
       cliente_id: "abc",
@@ -249,7 +250,39 @@ describe("clienteParaContrato", () => {
       email: null,
       tel: null,
       status: "Ativo",
+      cliente_desde: "2024-12-05",
     });
+  });
+
+  /**
+   * `D-107` — a data de início da relação sai da primeira cobrança, e o
+   * silêncio dela precisa ser silêncio, não uma data plausível.
+   */
+  it("⛔ cliente sem cobrança nenhuma devolve null, nunca uma data inventada", () => {
+    const r = clienteParaContrato({
+      id: "abc",
+      nome: "Acme",
+      doc: null,
+      email: null,
+      tel: null,
+      status: "Ativo",
+    });
+    // Cliente cadastrado e ainda não faturado existe. Preencher `cliente_desde`
+    // com hoje faria a Dashboard afirmar que a relação começou agora.
+    expect(r.cliente_desde).toBeNull();
+  });
+
+  it("corta hora e fuso — a Dashboard grava isto numa coluna `date`", () => {
+    const r = clienteParaContrato({
+      id: "abc",
+      nome: "Acme",
+      doc: null,
+      email: null,
+      tel: null,
+      status: "Ativo",
+      primeiro_vencimento: "2024-12-05T03:00:00.000Z",
+    });
+    expect(r.cliente_desde).toBe("2024-12-05");
   });
 });
 
