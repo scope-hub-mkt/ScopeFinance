@@ -21,7 +21,7 @@ export const GET = rotaIntegracao(async () => {
   const supabase = createSupabaseAdmin();
   const { data, error } = await supabase
     .from("clientes")
-    .select("id, nome, doc, email, tel, status")
+    .select("id, nome, doc, email, tel, status, status_cadastro")
     .order("nome");
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

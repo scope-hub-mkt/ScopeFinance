@@ -242,6 +242,7 @@ describe("clienteParaContrato", () => {
         tel: null,
         status: "Ativo",
         primeiro_vencimento: "2024-12-05",
+        status_cadastro: "efetivo",
       })
     ).toEqual({
       cliente_id: "abc",
@@ -251,6 +252,7 @@ describe("clienteParaContrato", () => {
       tel: null,
       status: "Ativo",
       cliente_desde: "2024-12-05",
+      status_cadastro: "efetivo",
     });
   });
 
@@ -270,6 +272,26 @@ describe("clienteParaContrato", () => {
     // Cliente cadastrado e ainda não faturado existe. Preencher `cliente_desde`
     // com hoje faria a Dashboard afirmar que a relação começou agora.
     expect(r.cliente_desde).toBeNull();
+  });
+
+  /**
+   * `D-108` — a divergência 11 × 10 do painel da Dashboard tinha uma causa, e
+   * era esta: `status_cadastro` não atravessava a ponte.
+   */
+  it("⛔ carrega `status_cadastro` — sem ele a Dashboard conta provisório como ativo", () => {
+    const r = clienteParaContrato({
+      id: "abc",
+      nome: "Sem documento",
+      doc: null,
+      email: null,
+      tel: null,
+      // Cadastro provisório nasce 'Ativo' por default do schema: quem olha só
+      // `status` conta como ativo alguém de quem não se sabe nem o documento.
+      status: "Ativo",
+      status_cadastro: "provisorio",
+    });
+    expect(r.status).toBe("Ativo");
+    expect(r.status_cadastro).toBe("provisorio");
   });
 
   it("corta hora e fuso — a Dashboard grava isto numa coluna `date`", () => {

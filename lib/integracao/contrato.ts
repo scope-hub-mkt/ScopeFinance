@@ -40,6 +40,22 @@ export interface ClienteContrato {
    * faturado existe, e inventar uma data para ele seria pior que o traço.
    */
   cliente_desde: string | null;
+  /**
+   * `'efetivo'` | `'provisorio'` — se a IDENTIDADE deste cadastro foi
+   * conferida.
+   *
+   * ⚖️ **Eixo diferente de `status`, e confundi-los produz número errado**
+   * (`D-108`, 04/09/2026). `status` diz se o cliente está em operação;
+   * `status_cadastro` diz se sabemos quem ele é. Um cadastro provisório nasce
+   * `'Ativo'` por default do schema, então quem olha só `status` conta como
+   * ativo alguém sem documento e sem cobrança nenhuma.
+   *
+   * ⛔ **Este banco já excluía o provisório de `clientes_ativos`** desde
+   * 28/08/2026; a Dashboard não podia fazer o mesmo porque o campo não
+   * atravessava. Era a origem da divergência 11 × 10 que o painel de lá
+   * exibia como se fossem duas perguntas distintas.
+   */
+  status_cadastro: string | null;
 }
 
 /**
@@ -124,6 +140,7 @@ export interface LinhaCliente {
   email: string | null;
   tel: string | null;
   status: string | null;
+  status_cadastro?: string | null;
   /**
    * `min(vencimento)` das cobranças do cliente — calculado por quem lê o
    * banco, não aqui. Este arquivo continua puro (nenhuma linha toca banco),
@@ -180,6 +197,7 @@ export function clienteParaContrato(c: LinhaCliente): ClienteContrato {
     // já nesse formato, mas um `timestamptz` vindo por engano traria hora e
     // fuso — e a Dashboard grava isto numa coluna `date`.
     cliente_desde: c.primeiro_vencimento ? String(c.primeiro_vencimento).slice(0, 10) : null,
+    status_cadastro: c.status_cadastro ?? null,
   };
 }
 
