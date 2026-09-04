@@ -117,8 +117,13 @@ não defeito da migração.
 | Onde | O quê | Como se muda |
 |---|---|---|
 | Painel do **Asaas** | os **dois** webhooks (`Scope Finance — negócio` e `— operacional`) | `node scripts/webhooks-asaas.mjs --aplicar` |
-| Painel do **CRM** (`api.scopecompany.com.br`) | a URL que entrega em `/api/integracao/webhooks/crm` | na mão, no painel do CRM |
-| Banco da **Dashboard** | `SCOPEFINANCE_API_BASE` (tabela `integracao_credenciais`) e o `url_destino` da assinatura de webhook que entrega em `/api/integracao/eventos` | *Administração → Integrações* e *Administração → API* |
+| Banco da **Dashboard** | `SCOPEFINANCE_API_BASE`, `SCOPEFINANCE_CRM_WEBHOOK_URL` e o `url_destino` da assinatura de webhook | *Administração → Integrações* e *Administração → API* |
+
+⚠️ **O CRM não guarda endereço nosso** — e a suposição contrária manda mexer no
+sistema errado. O `api.scopecompany.com.br` é **somente leitura**: quem entrega
+em `/api/integracao/webhooks/crm` é a **Dashboard**, a cada 10 min, lendo o
+destino de `SCOPEFINANCE_CRM_WEBHOOK_URL` no banco dela. Dois dos três
+ponteiros são `POST` assinado com HMAC e janela de tempo.
 
 ⛔ **POST de terceiro seguindo 308 é arranjo, não desenho.** O 308 existe para
 o navegador e para o link esquecido; o Asaas é a fonte do fato financeiro
