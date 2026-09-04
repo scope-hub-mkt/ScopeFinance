@@ -469,8 +469,22 @@ export async function backfillAssinaturas(
   const seco = opts.seco ?? false;
   const r = vazio("assinaturas", offset, seco);
 
+  // ⛔ **`includeDeleted` não é zelo, é a única forma de a listagem estar
+  // completa** (`L-163`, 04/09/2026). Medido na conta de produção:
+  // `/subscriptions` devolve **8** e `?includeDeleted=true` devolve **34** —
+  // as 26 restantes estão `INACTIVE` com `deleted: true`, e **113 cobranças
+  // reais apontam para 31 assinaturas distintas**. Sem elas aqui, 80 dessas
+  // cobranças ficam com `assinatura_id` nulo, a Dashboard não tem por onde
+  // ligar o pagamento a quem prestou o serviço, e o motor de comissão lê
+  // pagamento e cria zero — verde, calado, todo dia.
+  //
+  // ⚖️ É a MESMA lição que `buscarUm` já carrega para `/customers` (§ do
+  // `lib/asaas.ts`): **a listagem do Asaas omite o excluído, e o excluído tem
+  // dinheiro real atrás**. Assinatura cancelada entra como `Cancelada` —
+  // `statusDaAssinatura` já traduz `INACTIVE` assim —, e `calcularMrr` só
+  // soma `Ativa`, então nenhum número exibido se move por causa disto.
   const pagina = await listarPagina<Record<string, unknown>>(
-    "/subscriptions",
+    "/subscriptions?includeDeleted=true",
     offset,
     opts.limite ?? 100
   );
@@ -557,6 +571,25 @@ export async function backfillCobrancas(
       vinculos.subscription
     );
     if (assinaturaId) linha.assinatura_id = assinaturaId;
+    // ⛔ **Cobrança que NOMEIA uma assinatura ausente vira conflito, não
+    // silêncio** (`L-163`). Até 04/09/2026 este `if` sem `else` era o defeito
+    // inteiro: o gateway dizia `subscription: sub_…`, a consulta não achava, a
+    // linha era gravada com `assinatura_id` nulo e a importação reportava
+    // `criados: 50, conflitos: []`. A perda só aparecia dois sistemas adiante,
+    // como comissão que não nasce.
+    //
+    // ⚖️ Ele não interrompe a gravação de propósito: a cobrança é fato do
+    // gateway e tem de entrar de qualquer jeito. O que muda é que a falta
+    // passa a ter **nome, id e contagem** em quem roda o backfill.
+    else if (vinculos.subscription) {
+      r.conflitos.push({
+        etapa: "cobrancas",
+        asaas_id: asaasId,
+        motivo:
+          `a cobrança aponta para a assinatura ${vinculos.subscription}, que não existe ` +
+          `neste banco — rode a etapa "assinaturas" antes desta`,
+      });
+    }
 
     const existenteId = await idPorAsaas(supabase, "contas_receber", "asaas_payment_id", asaasId);
 
