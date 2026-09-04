@@ -11,7 +11,7 @@ import "server-only";
  */
 
 export interface EstadoIntegracao {
-  /** URL base da API pública da Dashboard, ex.: https://…vercel.app/api/v1 */
+  /** URL base da API pública da Dashboard, ex.: https://dashboard.scopecompany.com.br/api/v1 */
   dashboardBase: string | null;
   /** Chave da API da Dashboard, para LERMOS o cadastro mestre de lá. */
   dashboardApiKey: string | null;

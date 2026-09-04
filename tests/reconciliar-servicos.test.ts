@@ -80,7 +80,7 @@ beforeEach(() => {
   novoBanco();
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
-  vi.stubEnv("SCOPE_DASHBOARD_API_BASE", "https://dashboard-oficial-scope.vercel.app/api/v1");
+  vi.stubEnv("SCOPE_DASHBOARD_API_BASE", "https://dashboard.scopecompany.com.br/api/v1");
   vi.stubEnv("SCOPE_DASHBOARD_API_KEY_OUT", "sk-teste");
 });
 

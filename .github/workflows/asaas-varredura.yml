@@ -60,7 +60,7 @@ jobs:
           set -euo pipefail
           RESP=$(curl -fsS --max-time 120 \
             -H "Authorization: Bearer $CRON_SECRET" \
-            "https://scopefinance-chi.vercel.app/api/cron/asaas")
+            "https://finance.scopecompany.com.br/api/cron/asaas")
           echo "$RESP"
 
           # ⚠️ O alerta do §4.9 vira falha do workflow de propósito. A

@@ -34,7 +34,12 @@
  * monitoramento. Se ela caísse sobre `PAYMENT_*` a conta seria outra, e a
  * ordem teria de ser negociada com o suporte do Asaas em vez de aceita.
  *
- * ⛔ **A URL e o token não mudam**, e este script não os toca.
+ * ⛔ **A URL e o token são reescritos a cada `--aplicar`.** `corpo()` manda
+ * `url` e `authToken` no PUT e no POST — e é exatamente por isso que este
+ * script é o instrumento da troca de domínio de 04/09/2026: rodá-lo
+ * reaponta os **dois** webhooks já existentes. A linha que estava aqui
+ * dizia que o script "não os toca" — era inofensiva enquanto o valor não
+ * mudava, e virou falsa no dia em que mudou.
  *
  * Uso:
  *   node scripts/webhooks-asaas.mjs            # mostra o que faria
@@ -96,7 +101,7 @@ if (negocio.length + operacional.length !== 73) {
   process.exit(1);
 }
 
-const URL_DESTINO = "https://scopefinance-chi.vercel.app/api/integracao/webhooks/asaas";
+const URL_DESTINO = "https://finance.scopecompany.com.br/api/integracao/webhooks/asaas";
 
 const DESEJADO = [
   {
@@ -127,7 +132,7 @@ console.log("\nDEPOIS:");
 for (const d of DESEJADO) {
   console.log(`  "${d.name}" · ${d.sendType} · ${d.events.length} eventos — ${d.porque}`);
 }
-console.log("\n  A URL e o token não mudam.");
+console.log(`\n  URL de destino (reescrita nos dois): ${URL_DESTINO}`);
 
 if (!APLICAR) {
   console.log("\nNada foi aplicado. Para valer:  node scripts/webhooks-asaas.mjs --aplicar\n");

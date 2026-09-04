@@ -5,7 +5,7 @@ import { SincronizarCatalogo } from "./SincronizarCatalogo";
 
 export const dynamic = "force-dynamic";
 
-const URL_CATALOGO = "https://dashboard-oficial-scope.vercel.app/servicos";
+const URL_CATALOGO = "https://dashboard.scopecompany.com.br/servicos";
 
 /**
  * Data **e hora** — `D-90`. Só a data não distingue "sincronizado agora" de

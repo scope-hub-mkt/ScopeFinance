@@ -51,12 +51,104 @@ Abra http://localhost:3000 → faça login com o usuário criado no Supabase.
 1. Suba este projeto para um repositório Git e **importe na Vercel** (ou rode `vercel`).
 2. Em **Project Settings → Environment Variables**, cadastre as mesmas variáveis do `.env.local`
    (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, e quando for usar: `ASAAS_API_KEY`, `ASAAS_API_BASE`, `CRON_SECRET`, `ASAAS_NF_*`).
-3. Deploy. O domínio público da Vercel já serve o sistema.
+3. Deploy. O endereço canônico é **`https://finance.scopecompany.com.br`** —
+   veja *Domínio próprio*, logo abaixo.
 4. **Cron**: o [`vercel.json`](vercel.json) agenda `GET /api/cron/recorrencia` todo dia às 06:00 UTC.
    Defina `CRON_SECRET` na Vercel — ela envia esse segredo no header `Authorization` automaticamente.
 
-### Domínio próprio
-Em **Project Settings → Domains**, adicione `financeiro.suaagencia.com.br` e aponte o DNS conforme a Vercel indicar.
+### Domínio próprio — `finance.scopecompany.com.br`
+
+**Desde 04/09/2026 o endereço canônico é `https://finance.scopecompany.com.br`.**
+`scopefinance-chi.vercel.app` continua de pé e responde **308** para ele: um
+endereço só, e nenhum link antigo morre.
+
+#### A ordem é obrigatória, e inverter não dá erro — dá silêncio
+
+O alvo do CNAME é gerado **por projeto**, no instante em que o domínio é
+adicionado na Vercel (`<hash>.vercel-dns-017.com`). Criar o registro no DNS
+antes produz um CNAME sintaticamente perfeito apontando para lugar nenhum, e
+**nada fica vermelho** — nem na Vercel, nem na Hostinger.
+
+1. **Vercel** → projeto `scopefinance` → *Settings › Domains › Add Existing* →
+   `finance.scopecompany.com.br`. A tela passa a mostrar *Invalid
+   Configuration* com o registro exigido. **É a única fonte do valor do
+   passo 2** — não há como deduzi-lo nem reaproveitá-lo de outro projeto.
+2. **Hostinger** → hPanel → Domínios → `scopecompany.com.br` → *DNS /
+   Nameservers*. A zona é autoritativa lá (NS `dns-parking`), e já hospeda
+   `painel`, `suportecrm` e `dashboard` na Vercel.
+
+   | Tipo | Nome | Aponta para | TTL |
+   |---|---|---|---|
+   | `CNAME` | `finance` | `d54cba0101c0baeb.vercel-dns-017.com` | 300 |
+
+   ⛔ **O nome é só o rótulo** (`finance`), nunca o domínio inteiro — a
+   Hostinger completa a zona sozinha, e `finance.scopecompany.com.br` no campo
+   vira `finance.scopecompany.com.br.scopecompany.com.br`.
+
+   ⛔ **Não encoste em `@` (ALIAS), `MX`, `TXT` (SPF/DMARC) nem
+   `*._domainkey`.** Ali mora o e-mail da empresa; um deles a menos e a Scope
+   para de receber e-mail sem que nada nesta aplicação mude de cor.
+3. **Vercel** → domínio `scopefinance-chi.vercel.app` → *Edit* → *Redirect to*
+   `finance.scopecompany.com.br`, **308 Permanent**.
+
+#### O passo que falha em silêncio: o Supabase Auth
+
+**Authentication › URL Configuration → Site URL** =
+`https://finance.scopecompany.com.br`.
+
+⛔ **O Supabase não devolve erro para um `redirectTo` fora da allow-list:**
+ele ignora e manda para a Site URL. Domínio novo com Site URL velha autentica
+normalmente e deposita o usuário no endereço antigo — sem exceção, sem log,
+sem tela vermelha.
+
+⚖️ **Nenhuma Redirect URL foi acrescentada, e isso é escolha.** Este
+repositório não chama `redirectTo` em lugar nenhum: o login é
+`signInWithPassword`/`signUp` ([`app/login/page.tsx`](app/login/page.tsx)) e
+todo desvio do [`middleware.ts`](middleware.ts) é relativo
+(`request.nextUrl.clone()`). Allow-list curta é allow-list que alguém
+consegue auditar.
+
+⚠️ **A sessão do endereço antigo não atravessa.** O cookie do `@supabase/ssr`
+é *host-only*: todo mundo faz login de novo, uma vez. É o desenho do cookie,
+não defeito da migração.
+
+#### O que mora fora do repositório — deploy nenhum alcança
+
+| Onde | O quê | Como se muda |
+|---|---|---|
+| Painel do **Asaas** | os **dois** webhooks (`Scope Finance — negócio` e `— operacional`) | `node scripts/webhooks-asaas.mjs --aplicar` |
+| Painel do **CRM** (`api.scopecompany.com.br`) | a URL que entrega em `/api/integracao/webhooks/crm` | na mão, no painel do CRM |
+| Banco da **Dashboard** | `SCOPEFINANCE_API_BASE` (tabela `integracao_credenciais`) e o `url_destino` da assinatura de webhook que entrega em `/api/integracao/eventos` | *Administração → Integrações* e *Administração → API* |
+
+⛔ **POST de terceiro seguindo 308 é arranjo, não desenho.** O 308 existe para
+o navegador e para o link esquecido; o Asaas é a fonte do fato financeiro
+(`D-99`) e a entrega dele tem de acertar o endereço na primeira tentativa.
+
+⚠️ **Antes de rodar `webhooks-asaas.mjs`, olhe o `ASAAS_API_KEY` do
+`.env.local`.** Medido em 04/09/2026: o valor estava gravado como
+`\$aact_prod_…` — a barra que escapa o `$` no shell tinha entrado no arquivo.
+O script mandava a barra junto e o Asaas respondia `invalid_access_token`. O
+sintoma acusa a chave; a chave estava certa.
+
+#### Medido em 04/09/2026, depois da troca
+
+| Sonda | Resultado |
+|---|---|
+| `finance.scopecompany.com.br` → CNAME | `d54cba0101c0baeb.vercel-dns-017.com` · Vercel `misconfigured: false` |
+| `GET https://finance.scopecompany.com.br/login` | **200**, certificado válido |
+| `HEAD https://scopefinance-chi.vercel.app/login` | **308** → `https://finance.scopecompany.com.br/login` (caminho preservado) |
+| `POST …/api/integracao/webhooks/asaas` sem token | **401** |
+| `POST …/api/integracao/webhooks/crm` sem HMAC | **401** |
+| `GET …/api/integracao/webhooks/asaas` | `provisionado: true`, fila `pendentes: 0`, `falhos: 0`, `alerta: false` |
+| Webhooks no painel do Asaas | os **dois** em `finance.scopecompany.com.br`, `enabled`, `interrupted: false`, 49 + 24 = **73** eventos |
+
+⚖️ **A troca em [`.github/workflows/asaas-varredura.yml`](.github/workflows/asaas-varredura.yml)
+conserta uma falha silenciosa, não só um endereço.** O passo usa
+`curl -fsS` **sem `-L`**. Medido: contra o endereço antigo isso devolve
+`exit 0` com o corpo `Redirecting...` — o `grep '"alerta":true'` não acha
+nada, o workflow fica **verde e nunca chama o cron**. Contra o endereço novo,
+credencial errada devolve `exit 22` (401) e o workflow fica vermelho, que é o
+comportamento que o §4.9 comprou.
 
 ---
 
@@ -160,9 +252,9 @@ registrou riscos que foram **aceitos, não resolvidos**. Parte caiu em
 
 | Item | Estado |
 |---|---|
-| Suíte de testes | ✅ **existe desde 25/08/2026** — `npm test`, **377 casos** em 19 arquivos. ♻️ Medido em 02/09/2026; eram 123 em 26/08 e 103 em 25/08 |
+| Suíte de testes | ✅ **existe desde 25/08/2026** — `npm test`, **415 casos** em 24 arquivos (+1 pulado). ♻️ Medido em 04/09/2026; eram 377 em 02/09, 123 em 26/08 e 103 em 25/08 |
 | CI | ✅ **existe desde 25/08/2026** — `.github/workflows/ci.yml`: tipos, **lint**, testes e build |
-| **Lint** | ✅ **passou a existir de verdade em 25/08/2026.** O script era `next lint` **sem ESLint instalado e sem config** — um comando que promete análise e entrega silêncio: saía limpo porque não olhava para nada. Agora ESLint é dependência real, há `eslint.config.mjs`, e o CI tem passo próprio de lint (0 erros, **17 avisos** — medido em 02/09/2026; eram 23) |
+| **Lint** | ✅ **passou a existir de verdade em 25/08/2026.** O script era `next lint` **sem ESLint instalado e sem config** — um comando que promete análise e entrega silêncio: saía limpo porque não olhava para nada. Agora ESLint é dependência real, há `eslint.config.mjs`, e o CI tem passo próprio de lint (0 erros, **18 avisos** — medido em 04/09/2026; eram 17 em 02/09 e 23 antes) |
 | Unicidade de CPF/CNPJ | ✅ índice único normalizado (era o Ponto 1 do Gate G0) |
 | Consumo de `cliente.criado` | ✅ implementado (era o Ponto 7 do Gate G0) |
 | **Integração Asaas exercitada contra a API real** | ✅ **passou a ser em 02/09/2026.** `/bancos` e `/cartoes` leem a conta de produção a cada abertura — saldo (`/finance/balance`), extrato (`/financialTransactions`), titular, chave Pix e as cobranças no cartão (`/payments?billingType=CREDIT_CARD` + `/installments`). ⚠️ O que forçou a mudança foi uma medição: a tabela `bancos` dizia **R$ 429,47** e a conta tinha **R$ 13,79** |

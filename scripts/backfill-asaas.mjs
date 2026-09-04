@@ -25,7 +25,7 @@ const flag = (nome, padrao = null) => {
 };
 
 const GRAVAR = args.includes("--gravar");
-const BASE = flag("base", "https://scopefinance-chi.vercel.app");
+const BASE = flag("base", "https://finance.scopecompany.com.br");
 const SO_ETAPA = flag("etapa");
 
 const env = Object.fromEntries(
