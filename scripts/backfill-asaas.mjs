@@ -95,7 +95,8 @@ for (const etapa of ETAPAS) {
 
       if (etapa === "religar") {
         console.log(
-          `religar      contas=${num(r.contas)} assinaturas=${num(r.assinaturas)} notas=${num(r.notas)}`
+          `religar      contas=${num(r.contas)} assinaturas=${num(r.assinaturas)} notas=${num(r.notas)}` +
+            ` encerradas-datadas=${num(r.datadas ?? 0)}`
         );
         break;
       }

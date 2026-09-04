@@ -689,8 +689,16 @@ export async function backfillNotas(
 export async function religarOrfaos(
   supabase: SupabaseClient,
   seco = false
-): Promise<{ etapa: Etapa; contas: number; assinaturas: number; notas: number; seco: boolean }> {
-  const r = { etapa: "religar" as Etapa, contas: 0, assinaturas: 0, notas: 0, seco };
+): Promise<{
+  etapa: Etapa;
+  contas: number;
+  assinaturas: number;
+  notas: number;
+  /** Assinaturas encerradas que ganharam a data de fim — ver `datarEncerradas`. */
+  datadas: number;
+  seco: boolean;
+}> {
+  const r = { etapa: "religar" as Etapa, contas: 0, assinaturas: 0, notas: 0, datadas: 0, seco };
 
   const { data: clientes } = await supabase
     .from("clientes")
@@ -725,5 +733,57 @@ export async function religarOrfaos(
     }
   }
 
+  r.datadas = await datarEncerradas(supabase, seco);
   return r;
+}
+
+/**
+ * Carimba `fim` na assinatura encerrada, com a data da **última cobrança
+ * paga** dela.
+ *
+ * ⛔ **O Asaas não guarda data de cancelamento.** A assinatura excluída volta
+ * com `deleted: true` e `endDate` no FUTURO — `endDate` é o fim previsto do
+ * contrato, não o dia em que ela morreu. Usar `endDate` gravaria um
+ * encerramento que ainda não aconteceu; deixar nulo faz quem consome carimbar
+ * *"hoje"*, que é a data em que alguém olhou, não a em que o compromisso
+ * acabou. Ambas são falsas, de jeitos diferentes.
+ *
+ * ⚖️ **A última cobrança paga é o único fato nosso sobre isso** — e é a
+ * fronteira certa: depois dela o cliente não pagou mais. Medido em
+ * 04/09/2026: 23 das 26 assinaturas encerradas têm cobrança paga e ganham
+ * data; as 3 sem nenhuma continuam nulas, porque inventar uma data para uma
+ * assinatura que nunca cobrou seria pior que a ausência.
+ *
+ * ⚠️ Roda **depois** das cobranças, de propósito: ela lê o que a etapa
+ * anterior acabou de vincular. Por isso mora em `religar`, que é a última.
+ */
+async function datarEncerradas(supabase: SupabaseClient, seco: boolean): Promise<number> {
+  const { data: encerradas } = await supabase
+    .from("assinaturas")
+    .select("id")
+    .neq("status", "Ativa")
+    .is("fim", null)
+    .limit(5_000);
+
+  let datadas = 0;
+  for (const a of (encerradas ?? []) as Array<{ id: string }>) {
+    const { data: ultima } = await supabase
+      .from("contas_receber")
+      .select("pago_em")
+      .eq("assinatura_id", a.id)
+      .eq("status", "Pago")
+      .not("pago_em", "is", null)
+      .order("pago_em", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const fim = (ultima as { pago_em: string } | null)?.pago_em;
+    if (!fim) continue;
+
+    if (!seco) {
+      await supabase.from("assinaturas").update({ fim }).eq("id", a.id);
+    }
+    datadas++;
+  }
+  return datadas;
 }

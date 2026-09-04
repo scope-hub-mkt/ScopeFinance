@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { backfillAssinaturas, backfillCobrancas } from "@/lib/asaas/backfill";
+import { backfillAssinaturas, backfillCobrancas, religarOrfaos } from "@/lib/asaas/backfill";
 import { novoBanco, type BancoFake } from "./fakes/supabase-fake";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -173,5 +173,79 @@ describe("L-163 — assinatura excluída no gateway", () => {
 
     expect(r.conflitos).toEqual([]);
     expect(r.criados).toBe(1);
+  });
+});
+
+describe("L-163 — a assinatura encerrada ganha data de fim", () => {
+  /**
+   * ⛔ **O Asaas não guarda data de cancelamento.** A assinatura excluída volta
+   * com `deleted: true` e `endDate` no FUTURO — `endDate` é o fim previsto do
+   * contrato, não o dia em que ela morreu (medido: `sub_t93165njb2srsqo5`,
+   * excluída, com `endDate: 2027-06-10`). Usar `endDate` gravaria um
+   * encerramento que ainda não aconteceu; deixar nulo faz a Dashboard carimbar
+   * *"hoje"*, que é a data em que alguém olhou. As duas são falsas.
+   *
+   * ⚖️ A última cobrança **paga** é o único fato nosso sobre isso, e é a
+   * fronteira certa: depois dela o cliente não pagou mais.
+   */
+  it("carimba `fim` com a data da última cobrança paga", async () => {
+    const banco = novoBanco({
+      clientes: [],
+      assinaturas: [{ id: "assin-morta", status: "Cancelada", fim: null }],
+      contas_receber: [
+        { id: "c1", assinatura_id: "assin-morta", status: "Pago", pago_em: "2026-06-11" },
+        { id: "c2", assinatura_id: "assin-morta", status: "Pago", pago_em: "2026-08-11" },
+        // ⛔ Não paga não conta: ela não prova que o cliente ainda estava lá.
+        { id: "c3", assinatura_id: "assin-morta", status: "Vencido", pago_em: "2026-09-11" },
+      ],
+    });
+
+    const r = await religarOrfaos(comoCliente(banco));
+
+    expect(r.datadas).toBe(1);
+    expect(banco.tabelas.get("assinaturas")?.[0]?.fim).toBe("2026-08-11");
+  });
+
+  it("assinatura ATIVA não é datada — ela não acabou", async () => {
+    const banco = novoBanco({
+      clientes: [],
+      assinaturas: [{ id: "assin-viva", status: "Ativa", fim: null }],
+      contas_receber: [
+        { id: "c1", assinatura_id: "assin-viva", status: "Pago", pago_em: "2026-08-11" },
+      ],
+    });
+
+    const r = await religarOrfaos(comoCliente(banco));
+
+    expect(r.datadas).toBe(0);
+    expect(banco.tabelas.get("assinaturas")?.[0]?.fim).toBeNull();
+  });
+
+  it("encerrada SEM cobrança paga continua nula — inventar data é pior que a ausência", async () => {
+    const banco = novoBanco({
+      clientes: [],
+      assinaturas: [{ id: "assin-vazia", status: "Cancelada", fim: null }],
+      contas_receber: [],
+    });
+
+    const r = await religarOrfaos(comoCliente(banco));
+
+    expect(r.datadas).toBe(0);
+    expect(banco.tabelas.get("assinaturas")?.[0]?.fim).toBeNull();
+  });
+
+  it("`fim` já preenchido não é reescrito — a data de lá vence a derivada", async () => {
+    const banco = novoBanco({
+      clientes: [],
+      assinaturas: [{ id: "assin-datada", status: "Cancelada", fim: "2026-01-31" }],
+      contas_receber: [
+        { id: "c1", assinatura_id: "assin-datada", status: "Pago", pago_em: "2026-08-11" },
+      ],
+    });
+
+    const r = await religarOrfaos(comoCliente(banco));
+
+    expect(r.datadas).toBe(0);
+    expect(banco.tabelas.get("assinaturas")?.[0]?.fim).toBe("2026-01-31");
   });
 });
