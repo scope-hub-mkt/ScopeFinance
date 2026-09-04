@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Badge, MetricGrid, Dinheiro, type ItemMetrica } from "@/components/ui";
 import { fmt, fmtDate } from "@/lib/format";
+import { descreverCiclo, descreverTermino } from "@/lib/ciclo-de-vida";
 import type { TelaServicosEntregues } from "@/lib/dominio/servicos-entregues";
 
 /**
@@ -177,7 +178,18 @@ export function PainelEntregues({ dados }: { dados: TelaServicosEntregues }) {
                   {l.servico_nome}
                   <div className="tiny">
                     {l.descricao}
-                    {l.recorrencia ? ` · ${l.recorrencia}` : " · pontual"}
+                    {" · "}
+                    {/* `RF-105` — o rotulo diz O QUE o numero significa. A
+                        mesma frase da Dashboard, de proposito: o mesmo servico
+                        descrito de dois jeitos faz a pessoa achar que sao
+                        coisas diferentes. */}
+                    {descreverCiclo({
+                      recorrente: Boolean(l.recorrencia),
+                      encerrado: l.contrato_status !== "Ativo",
+                      dias: l.dias,
+                      temFim: l.contrato_fim !== null,
+                    })}
+                    {l.recorrencia ? ` · ${l.recorrencia}` : ""}
                     {l.quantidade !== 1 ? ` · ${l.quantidade}×` : ""}
                   </div>
                 </td>
@@ -192,9 +204,19 @@ export function PainelEntregues({ dados }: { dados: TelaServicosEntregues }) {
                   {l.contrato_fim ? (
                     fmtDate(l.contrato_fim)
                   ) : (
-                    <span title="Contrato sem data de término: segue até ser encerrado.">
-                      sem fim previsto
-                    </span>
+                    (() => {
+                      const t = descreverTermino({
+                        recorrente: Boolean(l.recorrencia),
+                        encerrado: l.contrato_status !== "Ativo",
+                        dias: l.dias,
+                        temFim: false,
+                      });
+                      return (
+                        <span className={t.lacuna ? "c-orange" : undefined} title={t.explicacao}>
+                          {t.texto}
+                        </span>
+                      );
+                    })()
                   )}
                 </td>
 

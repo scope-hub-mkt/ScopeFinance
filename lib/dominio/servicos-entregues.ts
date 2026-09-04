@@ -35,6 +35,8 @@ export interface ServicoEntregue {
   contrato_status: string;
   contrato_inicio: string | null;
   contrato_fim: string | null;
+  /** Dias de vigência já corridos (ou totais, se encerrado). Nulo sem início. */
+  dias: number | null;
   /** ── o que foi cobrado e o que entrou, por este contrato ── */
   cobrancas: number;
   cobrado: number;
@@ -56,6 +58,14 @@ export interface TelaServicosEntregues {
     cobrado: number;
     recebido: number;
   };
+}
+
+/** Dias entre duas datas, ou até hoje. Espelha o gêmeo da Dashboard. */
+function diasEntre(inicio: string | null, fim: string | null): number | null {
+  if (!inicio) return null;
+  const a = new Date(inicio + "T00:00:00Z").getTime();
+  const b = fim ? new Date(fim + "T00:00:00Z").getTime() : Date.now();
+  return Math.max(0, Math.round((b - a) / 86_400_000));
 }
 
 const TETO = 5000;
@@ -132,6 +142,7 @@ export async function montarServicosEntregues(): Promise<TelaServicosEntregues> 
       contrato_status: contrato?.status ?? "(sem contrato)",
       contrato_inicio: contrato?.inicio ?? null,
       contrato_fim: contrato?.fim ?? null,
+      dias: diasEntre(contrato?.inicio ?? null, contrato?.fim ?? null),
       cobrancas: agregado.cobrancas,
       cobrado: agregado.cobrado,
       recebido: agregado.recebido,
