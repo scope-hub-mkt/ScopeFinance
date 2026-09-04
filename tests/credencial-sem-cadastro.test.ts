@@ -47,6 +47,29 @@ beforeEach(() => {
   });
 });
 
+/**
+ * Devolve a recusa de `requireUser()` **já provada ser uma recusa**.
+ *
+ * ⚠️ O caminho óbvio — `await requireUser().catch((e) => e as SemCadastroError)`
+ * — não compila: o `await` resulta em `User | SemCadastroError`, e ler `.motivo`
+ * de um `User` é erro de tipo. Um `as` no lugar calaria o compilador **e** o
+ * teste: se `requireUser()` um dia parar de lançar, o `User` passaria adiante e
+ * a asserção falharia dizendo "undefined não é 'sem-cadastro'" — mensagem que
+ * esconde o que de fato aconteceu, que é a guarda ter sumido.
+ *
+ * Aqui a ausência de exceção é ela própria uma falha nomeada.
+ */
+async function recusaDe(id: string): Promise<SemCadastroError> {
+  sessao = { id };
+  try {
+    await requireUser();
+  } catch (e) {
+    if (e instanceof SemCadastroError) return e;
+    throw e;
+  }
+  throw new Error(`requireUser() ACEITOU a credencial ${id} — a guarda de cadastro sumiu.`);
+}
+
 describe("requireUser — credencial válida não basta", () => {
   it("sem sessão nenhuma: 401", async () => {
     sessao = null;
@@ -74,10 +97,8 @@ describe("requireUser — credencial válida não basta", () => {
 
   it("a recusa DIZ o motivo, e os dois motivos são distintos", async () => {
     // ⚖️ Recusa muda manda a pessoa conferir a senha — o lado errado.
-    sessao = { id: SEM_CADASTRO };
-    const semCadastro = await requireUser().catch((e) => e as SemCadastroError);
-    sessao = { id: DESLIGADO };
-    const inativo = await requireUser().catch((e) => e as SemCadastroError);
+    const semCadastro = await recusaDe(SEM_CADASTRO);
+    const inativo = await recusaDe(DESLIGADO);
 
     expect(semCadastro.motivo).toBe("sem-cadastro");
     expect(inativo.motivo).toBe("inativo");

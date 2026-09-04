@@ -5,13 +5,32 @@ import { useRouter } from "next/navigation";
 import { LogoIcon } from "@/components/Logo";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
+/**
+ * ⛔ **Esta tela não cria conta, e a remoção é intencional** (04/09/2026).
+ *
+ * Ela oferecia "Criar uma conta", que chamava `supabase.auth.signUp` direto. Foi
+ * essa porta que produziu a credencial órfã encontrada e apagada em `D-115` —
+ * uma conta de auth sem linha em `usuarios`, que na época **entrava**.
+ *
+ * `D-115` fechou a entrada: sem cadastro correspondente, a sessão é encerrada e
+ * a recusa chega aqui por `?recusa=`. Medido de novo depois do conserto, com
+ * sessão real injetada: as telas internas param todas em `/login`.
+ *
+ * ⚖️ **Mas defesa em profundidade não é desculpa para deixar a porta da frente
+ * convidando.** Um botão que cria credencial destinada a nunca funcionar é
+ * frustração para quem tenta e inventário para quem varre. O acesso nasce de
+ * quem administra, nunca de quem chega.
+ *
+ * ⚠️ **Isto sozinho não impede a credencial de nascer** — a chave anônima é
+ * pública e alcança `/auth/v1/signup` sem passar por esta tela. O que fecha de
+ * verdade é *Authentication › Sign In / Providers › Allow new users to sign up*
+ * no painel do Supabase, que é ato de quem tem a conta.
+ */
 export default function LoginPage() {
   const router = useRouter();
-  const [mode, setMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
-  const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
 
   /**
@@ -35,21 +54,13 @@ export default function LoginPage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErr("");
-    setMsg("");
     setLoading(true);
     try {
       const supabase = createSupabaseBrowserClient();
-      if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({ email, password });
-        if (error) throw error;
-        setMsg("Conta criada. Se a confirmação de e-mail estiver ativa, confirme antes de entrar.");
-        setMode("login");
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-        router.replace("/");
-        router.refresh();
-      }
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      router.replace("/");
+      router.refresh();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Falha ao autenticar");
     } finally {
@@ -69,23 +80,20 @@ export default function LoginPage() {
         </div>
         <form onSubmit={submit}>
           <div className="fg">
-            <label>E-mail</label>
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required />
+            <label htmlFor="email">E-mail</label>
+            <input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required />
           </div>
           <div className="fg">
-            <label>Senha</label>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={mode === "signup" ? "new-password" : "current-password"} required />
+            <label htmlFor="senha">Senha</label>
+            <input id="senha" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required />
           </div>
           <div className="err">{err}</div>
-          {msg && <div className="tiny" style={{ color: "var(--ok)" }}>{msg}</div>}
           <button className="btn btn-p btn-block" type="submit" disabled={loading}>
-            {loading ? "Aguarde..." : mode === "login" ? "Entrar" : "Criar conta"}
+            {loading ? "Aguarde..." : "Entrar"}
           </button>
         </form>
-        <div style={{ marginTop: 14, textAlign: "center" }}>
-          <button className="link" onClick={() => { setMode(mode === "login" ? "signup" : "login"); setErr(""); setMsg(""); }}>
-            {mode === "login" ? "Criar uma conta" : "Já tenho conta — entrar"}
-          </button>
+        <div className="tiny" style={{ marginTop: 14, textAlign: "center" }}>
+          Acesso restrito à equipe. O cadastro é feito por quem administra.
         </div>
       </div>
     </div>
