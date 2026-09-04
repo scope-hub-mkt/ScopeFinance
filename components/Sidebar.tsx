@@ -30,6 +30,9 @@ export const NAV: { g: string; items: { href: string; icon: string; l: string }[
     items: [
       { href: "/clientes", icon: "ti-users", l: "Clientes" },
       { href: "/servicos", icon: "ti-package", l: "Serviços" },
+      // O gêmeo financeiro de `/servicos/prestados` da Dashboard: lá é quem
+      // entrega e quanto recebe; aqui é o que foi cobrado e o que entrou.
+      { href: "/servicos/entregues", icon: "ti-list-details", l: "Serviços entregues" },
     ],
   },
   {

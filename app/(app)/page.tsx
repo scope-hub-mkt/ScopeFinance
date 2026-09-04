@@ -2,6 +2,7 @@
 
 import { useStore, useRecursos } from "@/lib/store";
 import { MetricGrid, Empty, type ItemMetrica, Dinheiro, Sigilo } from "@/components/ui";
+import { AtualizarAgora } from "./AtualizarAgora";
 import { fmt, fmtDate, today, monthlyValue } from "@/lib/format";
 import { usePainelAsaas } from "./usePainelAsaas";
 
@@ -84,6 +85,10 @@ export default function DashboardPage() {
         </span>
       </div>
 
+      {/* Releitura forçada, para quando o painel parecer atrasado. */}
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "var(--e-2)" }}>
+        <AtualizarAgora rota="/" />
+      </div>
       <MetricGrid items={metrics} />
 
       <div className="two">
